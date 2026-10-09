@@ -1,0 +1,16 @@
+{
+  "name": "discord-live-bot",
+  "version": "1.0.0",
+  "description": "Bot do Discord de live: monta o servidor, avisa live ON sem marcar ninguém, XP/patentes e boas-vindas",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}
