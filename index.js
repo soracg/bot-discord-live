@@ -11,12 +11,15 @@ const {
   ActionRowBuilder,
   EmbedBuilder,
   MessageFlags,
+  AttachmentBuilder,
 } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const xp = require('./xp');
+const fs = require('fs');
+const path = require('path');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 if (!DISCORD_TOKEN || !GUILD_ID) {
@@ -38,6 +41,10 @@ const commands = [
     .setDescription('Cria/atualiza cargos, canais e mensagens do servidor')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
+    .setName('reset-servidor')
+    .setDescription('⚠️ APAGA TODOS os canais e categorias do servidor!')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
     .setName('rank')
     .setDescription('Mostra sua patente e XP')
     .addUserOption((o) => o.setName('membro').setDescription('Ver outro membro')),
@@ -52,41 +59,33 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 ].map((c) => c.toJSON());
 
-const fs = require('fs');
-const path = require('path');
-const { AttachmentBuilder } = require('discord.js');
-const config = require('./config.js');
-
 async function enviarBackupParaDiscord(client) {
-    if (!config.backupChannelId) return;
+  if (!cfg.backupChannelId) return;
 
-    try {
-        // Aponta para a pasta configurada ou usa './data' como padrão
-        const dataPath = path.join(process.env.DATA_DIR || './data', 'state.json');
-        
-        // Verifica se o arquivo de dados já existe antes de tentar enviar
-        if (!fs.existsSync(dataPath)) {
-            console.log('[Backup] Nenhum arquivo state.json encontrado para enviar.');
-            return;
-        }
+  try {
+    const dataPath = path.join(process.env.DATA_DIR || './data', 'state.json');
 
-        const canalBackup = await client.channels.fetch(config.backupChannelId);
-        if (!canalBackup) {
-            console.error('[Backup] Canal de backup não encontrado no servidor.');
-            return;
-        }
-
-        // Gera um anexo com um carimbo de data/hora no nome do arquivo
-        const file = new AttachmentBuilder(dataPath, { name: `backup-estado-${Date.now()}.json` });
-        
-        await canalBackup.send({ 
-            content: '📦 **Backup automático gerado:**', 
-            files: [file] 
-        });
-        console.log('[Backup] Arquivo enviado para o canal do Discord com sucesso.');
-    } catch (error) {
-        console.error('[Backup] Erro ao enviar o arquivo de estado:', error);
+    if (!fs.existsSync(dataPath)) {
+      console.log('[Backup] Nenhum arquivo state.json encontrado para enviar.');
+      return;
     }
+
+    const canalBackup = await client.channels.fetch(cfg.backupChannelId);
+    if (!canalBackup) {
+      console.error('[Backup] Canal de backup não encontrado no servidor.');
+      return;
+    }
+
+    const file = new AttachmentBuilder(dataPath, { name: `backup-estado-${Date.now()}.json` });
+
+    await canalBackup.send({
+      content: '📦 **Backup automático gerado:**',
+      files: [file],
+    });
+    console.log('[Backup] Arquivo enviado para o canal do Discord com sucesso.');
+  } catch (error) {
+    console.error('[Backup] Erro ao enviar o arquivo de estado:', error);
+  }
 }
 
 client.once(Events.ClientReady, async (c) => {
@@ -96,8 +95,8 @@ client.once(Events.ClientReady, async (c) => {
   await guild.commands.set(commands);
   notifier.start(c);
   setInterval(() => {
-        enviarBackupParaDiscord(client);
-    }, INTERVALO_BACKUP);
+    enviarBackupParaDiscord(client);
+  }, INTERVALO_BACKUP);
 });
 
 client.on(Events.MessageCreate, (msg) => {
@@ -134,6 +133,16 @@ client.on(Events.InteractionCreate, async (i) => {
           } catch (err) {
             console.error('[setup]', err);
             await i.editReply(`❌ Falhou: ${err.message}\nConfira se o bot tem permissão de Administrador e se o cargo dele está no topo da lista.`);
+          }
+          return;
+        }
+        case 'reset-servidor': {
+          await i.reply({ content: '🧹 **Iniciando a limpeza...** Apagando todas as categorias e canais do servidor.', flags: EPHEMERAL });
+          const channels = await i.guild.channels.fetch();
+          for (const [, channel] of channels) {
+            if (channel) {
+              await channel.delete().catch((err) => console.warn(`[reset] Não foi possível apagar ${channel?.name}:`, err.message));
+            }
           }
           return;
         }
