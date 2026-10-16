@@ -52,10 +52,6 @@ module.exports = {
 
   async execute(client, i) {
     // Requisito: Patente Soldado (Nível 5+)
-    const userXp = state.xp[i.user.id]?.xp ?? 0;
-    const nivel = progress(userXp).level;
-    if (nivel < 5) {
-      return i.reply({ content: `❌ Você precisa ser no mínimo **Patente Soldado (Nível 5)** para convocar um esquadrão. Você está no nível ${nivel}.`, flags: EPHEMERAL });
     }
 
     const jogo = i.options.getString('jogo', true);

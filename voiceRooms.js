@@ -3,21 +3,22 @@ const { state, save } = require('./store');
 
 const TRIGGER_KEY = 'createSquad';
 const TEMP_PREFIX = '🚁 Esq. ';
+const FALLBACK_TRIGGER_ID = '1558182613917892669'; // ID fixo informado por você como segurança
 
 async function handleVoiceState(oldState, newState) {
   const guild = newState.guild;
   const member = newState.member;
   if (!guild || !member || member.user.bot) return;
 
-  // Entrou no gatilho: cria uma sala privada de gerenciamento para quem criou,
-  // mas visível/conectável para toda a comunidade.
-  const triggerId = state.channels[TRIGGER_KEY];
+  const triggerId = state.channels[TRIGGER_KEY] || FALLBACK_TRIGGER_ID;
+
+  // Entrou no gatilho: cria a sala temporária
   if (newState.channelId && newState.channelId === triggerId) {
     let newChannel;
     try {
       const trigger = newState.channel;
       const displayName = String(member.displayName || member.user.username)
-        .replace(/[\\/\\#:@`]/g, '')
+        .replace(/[\\/#:@`]/g, '')
         .trim()
         .slice(0, 80) || member.user.username;
 
@@ -25,7 +26,7 @@ async function handleVoiceState(oldState, newState) {
         name: `${TEMP_PREFIX}${displayName}`.slice(0, 100),
         type: ChannelType.GuildVoice,
         parent: trigger.parentId || undefined,
-        userLimit: 6,
+        userLimit: 0, // 0 = Sem limite de pessoas, conforme solicitado
         permissionOverwrites: [
           {
             id: member.id,
@@ -49,11 +50,11 @@ async function handleVoiceState(oldState, newState) {
       state.tempVoiceChannels[newChannel.id] = member.id;
       save();
 
-      // A posição do gatilho serve de âncora; assim a sala fica imediatamente
-      // abaixo de "➕ Criar Esquadrão", antes de AFK e dos canais seguintes.
+      // Posiciona logo abaixo do canal de criação (ou logo acima do AFK se preferir)
       await newChannel.setPosition(trigger.position + 1).catch((err) => {
         console.warn('[voice-rooms] não consegui ajustar a posição:', err.message);
       });
+
       await member.voice.setChannel(newChannel, 'Mover para o esquadrão recém-criado');
     } catch (error) {
       if (newChannel) {
@@ -65,12 +66,14 @@ async function handleVoiceState(oldState, newState) {
     }
   }
 
-  // Remove apenas salas temporárias deste sistema quando ficam vazias.
+  // Remove salas temporárias quando ficam vazias
   const oldChannel = oldState.channel;
   if (!oldChannel || oldChannel.members.size > 0) return;
-  const sameCategory = state.channels[TRIGGER_KEY]
-    ? (guild.channels.cache.get(state.channels[TRIGGER_KEY])?.parentId === oldChannel.parentId)
+  
+  const sameCategory = triggerId 
+    ? (guild.channels.cache.get(triggerId)?.parentId === oldChannel.parentId)
     : false;
+    
   const tracked = Boolean(state.tempVoiceChannels?.[oldChannel.id]);
   const recognizable = oldChannel.name.startsWith(TEMP_PREFIX) && sameCategory;
   if (!tracked && !recognizable) return;
@@ -87,14 +90,14 @@ async function handleVoiceState(oldState, newState) {
 
 async function cleanupEmptyTemporaryChannels(guild) {
   state.tempVoiceChannels ??= {};
-  const trigger = state.channels[TRIGGER_KEY]
-    ? await guild.channels.fetch(state.channels[TRIGGER_KEY]).catch(() => null)
-    : null;
+  const triggerId = state.channels[TRIGGER_KEY] || FALLBACK_TRIGGER_ID;
+  const trigger = await guild.channels.fetch(triggerId).catch(() => null);
   if (!trigger) return;
 
   await guild.channels.fetch().catch((error) => {
     console.warn('[voice-rooms] não consegui atualizar a lista de canais:', error.message);
   });
+  
   for (const channel of guild.channels.cache.values()) {
     if (channel.type !== ChannelType.GuildVoice || channel.parentId !== trigger.parentId) continue;
     if (!channel.name.startsWith(TEMP_PREFIX) || channel.members.size > 0) continue;
