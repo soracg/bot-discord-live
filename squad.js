@@ -120,6 +120,9 @@ module.exports = {
         return i.reply({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar/fechar o grupo.', flags: EPHEMERAL });
       }
 
+      // Responde imediatamente para evitar timeout da interação do botão
+      await i.deferReply({ flags: EPHEMERAL });
+
       s.status = 'closed';
       s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       save();
@@ -128,7 +131,7 @@ module.exports = {
       try {
         const guild = i.guild;
         
-        // Se já existe uma call criada para este esquadrão, reaproveita. Se não, cria uma nova.
+        // Reaproveita a call se já existir para este esquadrão, senão cria uma nova
         let tempChan = s.voiceChannelId ? guild.channels.cache.get(s.voiceChannelId) : null;
 
         if (!tempChan) {
@@ -149,17 +152,20 @@ module.exports = {
           }
         }
 
-        // Marca todo mundo no chat de texto para se situarem
-        const mentions = s.entries.map((id) => `<@${id}>`).join(' ');
-        await i.channel.send({
-          content: `🚀 **Esquadrão Iniciado!** Canal de voz pronto: <#${tempChan.id}>\nChamando a tropa: ${mentions}`,
-          allowedMentions: { users: s.entries }
-        });
+        // Envia a menção da tropa DIRETAMENTE no chat de texto da sala de voz criada
+        const voiceTextChannel = guild.channels.cache.get(tempChan.id);
+        if (voiceTextChannel && voiceTextChannel.isTextBased()) {
+          const mentions = s.entries.map((id) => `<@${id}>`).join(' ');
+          await voiceTextChannel.send({
+            content: `🚀 **Esquadrão Iniciado!** Chamando a tropa: ${mentions}`,
+            allowedMentions: { users: s.entries }
+          }).catch(() => {});
+        }
       } catch (e) {
         console.warn('[squad] erro ao gerenciar canal de voz:', e.message);
       }
 
-      return i.reply({ content: '🚀 Esquadrão fechado e iniciado com sucesso!', flags: EPHEMERAL });
+      return i.editReply({ content: '🚀 Esquadrão fechado e iniciado com sucesso!' });
     }
 
     if (s.status === 'closed') {
