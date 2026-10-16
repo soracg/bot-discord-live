@@ -14,6 +14,7 @@ const {
 } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
+const loja = require('./loja');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const xp = require('./xp');
@@ -49,6 +50,9 @@ const commands = [
     .setName('rank')
     .setDescription('Mostra sua patente e XP')
     .addUserOption((o) => o.setName('membro').setDescription('Ver outro membro')),
+  new SlashCommandBuilder()
+  .setName('loja')
+  .setDescription('Troque seu XP por recompensas exclusivas'),
   new SlashCommandBuilder().setName('top').setDescription('Top 10 da tropa'),
   new SlashCommandBuilder()
     .setName('agenda')
@@ -153,6 +157,9 @@ client.on(Events.InteractionCreate, async (i) => {
           }
           return;
         }
+        case 'loja':
+        return loja.execute(client, i);
+        }
         case 'rank': {
           const user = i.options.getUser('membro') ?? i.user;
           const member = await i.guild.members.fetch(user.id).catch(() => null);
@@ -196,6 +203,9 @@ client.on(Events.InteractionCreate, async (i) => {
       if (i.customId.startsWith('sorteio:')) {
         return sorteio.onButton(client, i);
       }
+      if (i.customId.startsWith('loja:')) {
+  return loja.onButton(client, i);
+}
       if (i.customId.startsWith('role:')) {
         const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
         const roleId = def && state.roles[def.key];
