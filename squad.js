@@ -109,19 +109,47 @@ module.exports = {
   },
 
   async onButton(client, i) {
-    const s = G()[i.message.id];
-    if (!s) return i.reply({ content: 'Esta convocatória expirou ou não foi encontrada.', flags: EPHEMERAL });
+    // Responde imediatamente à interação para evitar o erro 10062 (Unknown interaction)
+    if (!i.deferred && !i.replied) {
+      await i.deferUpdate().catch(() => {});
+    }
+
+    let s = G()[i.message.id];
+
+    // Se o bot reiniciou e perdeu da memória, reconstrói o objeto automaticamente pela mensagem do Discord
+    if (!s && i.message.embeds.length > 0) {
+      const embed = i.message.embeds[0];
+      const titleMatch = embed.title?.match(/CONVOCATÓRIA:\s*(.+)/);
+      const jogo = titleMatch ? titleMatch[1] : 'Partida';
+      
+      s = {
+        id: i.message.id,
+        channelId: i.channelId,
+        jogo,
+        vagas: 10,
+        detalhes: 'Missão ativa',
+        hostId: i.user.id,
+        entries: [i.user.id],
+        suplentes: [],
+        status: 'open',
+        voiceChannelId: null,
+        closedAt: null,
+      };
+      G()[s.id] = s;
+      save();
+    }
+
+    if (!s) {
+      return i.followUp({ content: 'Esta convocatória expirou ou não foi encontrada.', flags: EPHEMERAL }).catch(() => {});
+    }
 
     const userId = i.user.id;
     const action = i.customId.split(':')[1];
 
     if (action === 'start') {
       if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
-        return i.reply({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar/fechar o grupo.', flags: EPHEMERAL });
+        return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar/fechar o grupo.', flags: EPHEMERAL }).catch(() => {});
       }
-
-      // Responde imediatamente para evitar timeout da interação do botão
-      await i.deferReply({ flags: EPHEMERAL });
 
       s.status = 'closed';
       s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -130,8 +158,6 @@ module.exports = {
 
       try {
         const guild = i.guild;
-        
-        // Reaproveita a call se já existir para este esquadrão, senão cria uma nova
         let tempChan = s.voiceChannelId ? guild.channels.cache.get(s.voiceChannelId) : null;
 
         if (!tempChan) {
@@ -144,7 +170,6 @@ module.exports = {
           save();
         }
         
-        // Move os membros das vagas principais para a sala de voz
         for (const memberId of s.entries) {
           const member = await guild.members.fetch(memberId).catch(() => null);
           if (member?.voice?.channel) {
@@ -152,7 +177,6 @@ module.exports = {
           }
         }
 
-        // Envia a menção da tropa DIRETAMENTE no chat de texto da sala de voz criada
         const voiceTextChannel = guild.channels.cache.get(tempChan.id);
         if (voiceTextChannel && voiceTextChannel.isTextBased()) {
           const mentions = s.entries.map((id) => `<@${id}>`).join(' ');
@@ -165,11 +189,11 @@ module.exports = {
         console.warn('[squad] erro ao gerenciar canal de voz:', e.message);
       }
 
-      return i.editReply({ content: '🚀 Esquadrão fechado e iniciado com sucesso!' });
+      return i.followUp({ content: '🚀 Esquadrão fechado e iniciado com sucesso!', flags: EPHEMERAL }).catch(() => {});
     }
 
     if (s.status === 'closed') {
-      return i.reply({ content: 'Este esquadrão já foi fechado/iniciado.', flags: EPHEMERAL });
+      return i.followUp({ content: 'Este esquadrão já foi fechado/iniciado.', flags: EPHEMERAL }).catch(() => {});
     }
 
     s.entries = s.entries.filter((id) => id !== userId);
@@ -178,16 +202,16 @@ module.exports = {
     if (action === 'join') {
       if (s.entries.length < s.vagas) {
         s.entries.push(userId);
-        await i.reply({ content: '📥 Você entrou nas **vagas principais** do esquadrão!', flags: EPHEMERAL });
+        await i.followUp({ content: '📥 Você entrou nas **vagas principais** do esquadrão!', flags: EPHEMERAL }).catch(() => {});
       } else {
         s.suplentes.push(userId);
-        await i.reply({ content: '🔄 Vagas principais esgotadas! Você entrou como **suplente (reserva)**.', flags: EPHEMERAL });
+        await i.followUp({ content: '🔄 Vagas principais esgotadas! Você entrou como **suplente (reserva)**.', flags: EPHEMERAL }).catch(() => {});
       }
     } else if (action === 'sub') {
       s.suplentes.push(userId);
-      await i.reply({ content: '🔄 Você entrou na lista de **suplentes**.', flags: EPHEMERAL });
+      await i.followUp({ content: '🔄 Você entrou na lista de **suplentes**.', flags: EPHEMERAL }).catch(() => {});
     } else if (action === 'leave') {
-      await i.reply({ content: '📤 Você saiu do esquadrão.', flags: EPHEMERAL });
+      await i.followUp({ content: '📤 Você saiu do esquadrão.', flags: EPHEMERAL }).catch(() => {});
     }
 
     if (s.entries.length < s.vagas && s.suplentes.length > 0) {
