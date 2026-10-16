@@ -87,4 +87,4 @@ function topEmbed() {
     .setDescription(top.length ? top.join('\n') : 'Ninguém pontuou ainda. Bora conversar!');
 }
 
-module.exports = { onMessage, syncPatente, rankEmbed, topEmbed };
+module.exports = { onMessage, syncPatente, rankEmbed, topEmbed, progress };
