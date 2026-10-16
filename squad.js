@@ -109,14 +109,12 @@ module.exports = {
   },
 
   async onButton(client, i) {
-    // Responde imediatamente à interação para evitar o erro 10062 (Unknown interaction)
     if (!i.deferred && !i.replied) {
       await i.deferUpdate().catch(() => {});
     }
 
     let s = G()[i.message.id];
 
-    // Se o bot reiniciou e perdeu da memória, reconstrói o objeto automaticamente pela mensagem do Discord
     if (!s && i.message.embeds.length > 0) {
       const embed = i.message.embeds[0];
       const titleMatch = embed.title?.match(/CONVOCATÓRIA:\s*(.+)/);
@@ -154,6 +152,8 @@ module.exports = {
       s.status = 'closed';
       s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       save();
+
+      // Força a atualização imediata da mensagem embed no canal
       await refreshMessage(client, s);
 
       try {
