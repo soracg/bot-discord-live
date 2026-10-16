@@ -8,18 +8,22 @@ state.squads ??= {};
 const G = () => state.squads;
 
 function embedFor(s) {
+  const descLines = [
+    `**Detalhes da Missão:** ${s.detalhes}`,
+    `**Líder do Esquadrão:** <@${s.hostId}>`,
+    '',
+    `👥 **Vagas Principais (${s.entries.length}/${s.vagas}):**`,
+    s.entries.length ? s.entries.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '_Ninguém na linha de frente ainda._',
+  ];
+
+  if (s.suplentes && s.suplentes.length > 0) {
+    descLines.push('', `🔄 **Suplentes (Reserva):**`, s.suplentes.map((id, index) => `${index + 1}. <@${id}>`).join('\n'));
+  }
+
   return new EmbedBuilder()
     .setColor(cfg.brand.color)
     .setTitle(`🪖 CONVOCATÓRIA: ${s.jogo}`)
-    .setDescription([
-      `**Detalhes da Missão:** ${s.detalhes}`,
-      `**Líder do Esquadrão:** <@${s.hostId}>`,
-      '',
-      `👥 **Vagas Principais (${s.entries.length}/${s.vagas}):**`,
-      s.entries.length ? s.entries.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '_Ninguém na linha de frente ainda._',
-      '',
-      s.suplentes.length ? `🔄 **Suplentes (Reserva):**\n` + s.suplentes.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '',
-    ].filter(Boolean))
+    .setDescription(descLines.join('\n')) // Junta tudo em uma única string perfeitamente formatada
     .setTimestamp();
 }
 
