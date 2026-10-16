@@ -13,6 +13,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 const cfg = require('./config');
+const squad = require('./squad');
 const { state, save } = require('./store');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
@@ -46,6 +47,12 @@ const commands = [
     .setName('setup')
     .setDescription('Cria/atualiza cargos, canais e mensagens do servidor')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+  .setName('squad')
+  .setDescription('Cria uma convocatória de esquadrão para partidas táticas')
+  .addStringOption((o) => o.setName('jogo').setDescription('Ex: War Dogs, Hell Let Loose, Squad').setRequired(true))
+  .addIntegerOption((o) => o.setName('vagas').setDescription('Número de vagas principais').setRequired(true))
+  .addStringOption((o) => o.setName('detalhes').setDescription('Detalhes da missão / objetivos').setRequired(true)),
   new SlashCommandBuilder()
     .setName('rank')
     .setDescription('Mostra sua patente e XP')
@@ -155,6 +162,9 @@ client.on(Events.InteractionCreate, async (i) => {
           }
           return;
         }
+        case 'squad': {
+  return squad.execute(client, i);
+}
         case 'rank': {
           const user = i.options.getUser('membro') ?? i.user;
           const member = await i.guild.members.fetch(user.id).catch(() => null);
@@ -205,6 +215,9 @@ client.on(Events.InteractionCreate, async (i) => {
       if (i.customId.startsWith('sorteio:')) {
         return sorteio.onButton(client, i);
       }
+      if (i.customId.startsWith('squad:')) {
+  return squad.onButton(client, i);
+}
       if (i.customId.startsWith('role:')) {
         const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
         const roleId = def && state.roles[def.key];
