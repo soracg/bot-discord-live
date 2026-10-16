@@ -50,11 +50,11 @@ const commands = [
     .setDescription('Cria/atualiza cargos, canais e mensagens do servidor')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
-  .setName('squad')
-  .setDescription('Cria uma convocatória de esquadrão para partidas táticas')
-  .addStringOption((o) => o.setName('jogo').setDescription('Ex: War Dogs, Hell Let Loose, Squad').setRequired(true))
-  .addIntegerOption((o) => o.setName('vagas').setDescription('Número de vagas principais').setRequired(true))
-  .addStringOption((o) => o.setName('detalhes').setDescription('Detalhes da missão / objetivos').setRequired(true)),
+    .setName('squad')
+    .setDescription('Cria uma convocatória de esquadrão para partidas táticas')
+    .addStringOption((o) => o.setName('jogo').setDescription('Ex: War Dogs, Hell Let Loose, Squad').setRequired(true))
+    .addIntegerOption((o) => o.setName('vagas').setDescription('Número de vagas principais').setRequired(true))
+    .addStringOption((o) => o.setName('detalhes').setDescription('Detalhes da missão / objetivos').setRequired(true)),
   new SlashCommandBuilder()
     .setName('rank')
     .setDescription('Mostra sua patente e XP')
@@ -133,17 +133,57 @@ client.on(Events.MessageCreate, (msg) => {
 
 client.on(Events.GuildMemberAdd, async (member) => {
   if (member.guild.id !== GUILD_ID || member.user.bot) return;
+
+  // Sincroniza a patente inicial do membro
   await xp.syncPatente(member, 0);
+
+  // 1. Mensagem de Boas-Vindas no Privado (DM) via Embed
+  try {
+    const welcomeEmbed = new EmbedBuilder()
+      .setColor(cfg.brand.color || 0x2b2d31)
+      .setTitle(`🪖 BEM-VINDO À TROPA DE ${cfg.brand.name.toUpperCase()}!`)
+      .setDescription(
+        [
+          `Fala, **${member.displayName}**! Seja muito bem-vindo à nossa comunidade!`,
+          '',
+          'Estamos felizes em ter você na equipe. Aqui organizamos nossas partidas táticas, trocamos ideias com a tropa e acompanhamos todas as transmissões ao vivo.',
+          '',
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          '',
+          '📌 **REDES & PLATAFORMAS OFICIAIS:**',
+          cfg.links.youtube ? `▶️ **YouTube:** ${cfg.links.youtube}` : null,
+          cfg.links.twitch ? `🟣 **Twitch:** ${cfg.links.twitch}` : null,
+          cfg.links.kick ? `🟢 **Kick:** ${cfg.links.kick}` : null,
+          '',
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          '',
+          '💡 *Fique atento aos canais da base, pegue suas especializações e boa missão em campo!*',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      )
+      .setFooter({ text: `${cfg.brand.name} • Comando Central` })
+      .setTimestamp();
+
+    await member.send({ embeds: [welcomeEmbed] }).catch(() => {
+      console.log(`[boas-vindas] Não foi possível enviar DM para ${member.user.tag} (DMs fechadas).`);
+    });
+  } catch (e) {
+    console.warn('[boas-vindas] Erro ao enviar mensagem privada:', e.message);
+  }
+
+  // 2. Anúncio público no canal de chegadas (se existir)
   const channel = state.channels.arrivals && (await client.channels.fetch(state.channels.arrivals).catch(() => null));
-  if (!channel) return;
-  await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(cfg.brand.color)
-        .setDescription(`🪖 **${member.displayName}** acabou de chegar à tropa! Já somos **${member.guild.memberCount}**.`),
-    ],
-    allowedMentions: NO_PING,
-  });
+  if (channel && channel.isTextBased()) {
+    await channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(cfg.brand.color)
+          .setDescription(`🪖 **${member.displayName}** acabou de chegar à tropa! Já somos **${member.guild.memberCount}**.`),
+      ],
+      allowedMentions: NO_PING,
+    }).catch(() => {});
+  }
 });
 
 client.on(Events.InteractionCreate, async (i) => {

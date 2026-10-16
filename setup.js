@@ -35,7 +35,6 @@ async function ensureRoles(guild) {
         reason: REASON,
       });
     } else if (!role.managed && (role.name !== def.name || role.color !== def.color || role.hoist !== wantHoist)) {
-      // não mexe nas permissões de um cargo que já existe
       await role.edit({ name: def.name, color: def.color, hoist: wantHoist, reason: REASON }).catch((e) => console.warn('[setup] role edit:', e.message));
     }
     state.roles[def.key] = role.id;
@@ -50,8 +49,6 @@ async function ensureRoles(guild) {
 const kind = (t) =>
   t === ChannelType.GuildCategory ? 'category' : t === ChannelType.GuildVoice ? 'voice' : 'text';
 
-// O host anterior pode ter removido o state.json. Compara nomes ignorando emojis,
-// separadores e diferenças de acentuação para reencontrar canais já existentes.
 const normalizedName = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -79,7 +76,7 @@ function overwritesFor(guild, def, catDef) {
       ...staffAllow(guild),
     ];
   }
-  return null; // canal comum: não mexe nas permissões
+  return null;
 }
 
 async function ensureChannel(guild, key, spec) {
@@ -122,7 +119,7 @@ async function ensureChannel(guild, key, spec) {
 // ───────────────────────── Mensagens fixas ─────────────────────────
 
 const embed = () => {
-  const e = new EmbedBuilder().setColor(cfg.brand.color).setFooter({ text: cfg.brand.name });
+  const e = new EmbedBuilder().setColor(cfg.brand.color).setFooter({ text: `${cfg.brand.name} • Comando Central` });
   if (cfg.brand.banner) e.setImage(cfg.brand.banner);
   return e;
 };
@@ -133,19 +130,28 @@ function startPayload() {
   return {
     embeds: [
       embed()
-        .setTitle(`🎖️ Bem-vindo à tropa de ${cfg.brand.name}!`)
+        .setTitle(`🪖 BEM-VINDO À TROPA DE ${cfg.brand.name.toUpperCase()}!`)
         .setDescription(
           [
-            'Aqui é o QG da comunidade. Fica à vontade, troca ideia e acompanha as lives.',
+            'Seja bem-vindo à base da comunidade! Aqui organizamos nossas operações táticas, trocamos ideias e acompanhamos as lives ao vivo.',
             '',
-            `📜 Leia as ${ch('rules')} e pegue seus cargos em ${ch('roles')}.`,
-            `🔴 Aviso de live no ar: ${ch('liveOn')} *(sem marcação, ative as notificações do canal se quiser ser avisado)*.`,
-            `📅 Dias e horários: ${ch('agenda')}.`,
-            `💬 Resenha durante a live: ${ch('chatLive')} (**XP em dobro** com a live no ar).`,
-            `🎬 Poste seus clipes em ${ch('clips')}.`,
-            `🏆 Converse para ganhar XP e subir de patente. Veja em ${ch('ranking')} e use \`/rank\` e \`/top\` em ${ch('commands')}.`,
-            `🔊 Chama o squad nos canais de voz.`,
-          ].join('\n'),
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '📌 **GUIA DE SOBREVIVÊNCIA NA BASE:**',
+            '',
+            `📜 **Diretrizes:** Confira o código de conduta em ${ch('rules')}.`,
+            `🎭 **Especializações:** Escolha seus cargos de jogos em ${ch('roles')}.`,
+            `🔴 **Avisos de Live:** Fique atento aos alertas em ${ch('liveOn')}.`,
+            `📅 **Horários:** Acompanhe a agenda das transmissões em ${ch('agenda')}.`,
+            `💬 **Resenha no Chat:** Converse durante as lives em ${ch('chatLive')} (**XP em dobro** com live ON).`,
+            `🎬 **Destaques:** Compartilhe seus melhores momentos em ${ch('clips')}.`,
+            `🏆 **Progressão:** Ganhe XP conversando e suba de patente. Veja a tabela em ${ch('ranking')} e consulte seu perfil em ${ch('commands')}.`,
+            `🚁 **Esquadrões:** Monte equipes dinâmicas e vá para o combate nas salas de voz.`,
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '💡 *Mantenha a postura e boa missão em campo!*',
+          ].join('\n')
         ),
     ],
   };
@@ -153,22 +159,47 @@ function startPayload() {
 
 function rulesPayload() {
   return {
-    embeds: [embed().setTitle('📜 Regras da casa').setDescription(cfg.rules.join('\n\n'))],
+    embeds: [
+      embed()
+        .setTitle('📜 DIRETRIZES & CÓDIGO DE CONDUTA')
+        .setDescription(
+          [
+            'Para mantermos o respeito mútuo, a organização e a alta performance da tropa, siga rigorosamente as diretrizes abaixo:',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            cfg.rules.join('\n\n'),
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '⚠️ *O descumprimento das regras acarretará em punição ou remoção da comunidade.*',
+          ].join('\n')
+        ),
+    ],
   };
 }
 
 function rolesPayload() {
   const row = new ActionRowBuilder().addComponents(
     cfg.interestRoles.map((r) =>
-      new ButtonBuilder().setCustomId(`role:${r.key}`).setLabel(r.label).setEmoji(r.emoji).setStyle(ButtonStyle.Secondary),
-    ),
+      new ButtonBuilder().setCustomId(`role:${r.key}`).setLabel(r.label).setEmoji(r.emoji).setStyle(ButtonStyle.Secondary)
+    )
   );
   return {
     embeds: [
       embed()
-        .setTitle('🎭 Escolha seus cargos')
+        .setTitle('🎭 PAINEL DE ESPECIALIZAÇÕES')
         .setDescription(
-          'Clique no botão para **pegar** ou **tirar** o cargo.\nEles servem para mostrar o que você curte jogar. Ninguém é marcado por eles.',
+          [
+            'Selecione abaixo os jogos que você costuma jogar para exibir suas especialidades em seu perfil:',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            ' Clique nos botões abaixo para **adicionar** ou **remover** os cargos.',
+            ' Eles servem para identificação na comunidade. Ninguém será marcado por eles.',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          ].join('\n')
         ),
     ],
     components: [row],
@@ -182,14 +213,24 @@ function linksPayload() {
     { key: 'twitch', label: 'Twitch', emoji: '🟣' },
   ].filter((d) => cfg.links[d.key]);
 
-  const e = embed().setTitle('🔗 Onde me encontrar');
+  const e = embed().setTitle('🔗 PLATAFORMAS OFICIAIS');
   if (!defs.length) {
-    e.setDescription('Nenhum link configurado ainda. Preencha TWITCH_LOGIN, KICK_SLUG e YOUTUBE_HANDLE no `.env` e rode `/setup` de novo.');
+    e.setDescription('Nenhum link configurado ainda. Preencha o `.env` e rode `/setup` novamente.');
     return { embeds: [e], components: [] };
   }
-  e.setDescription('Siga nas plataformas e não perca nenhuma live!');
+  e.setDescription(
+    [
+      'Acompanhe nossas operações ao vivo e conteúdos em todas as redes oficiais:',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+      'Inscreva-se e ative as notificações para não perder nenhuma transmissão!',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    ].join('\n')
+  );
   const row = new ActionRowBuilder().addComponents(
-    defs.map((d) => new ButtonBuilder().setLabel(d.label).setEmoji(d.emoji).setStyle(ButtonStyle.Link).setURL(cfg.links[d.key])),
+    defs.map((d) => new ButtonBuilder().setLabel(d.label).setEmoji(d.emoji).setStyle(ButtonStyle.Link).setURL(cfg.links[d.key]))
   );
   return { embeds: [e], components: [row] };
 }
@@ -198,25 +239,46 @@ function agendaPayload() {
   return {
     embeds: [
       embed()
-        .setTitle('📅 Agenda de lives')
-        .setDescription(state.agendaText || 'Ainda sem horários definidos. A staff atualiza com `/agenda`.'),
+        .setTitle('📅 AGENDA DE TRANSMISSÕES & OPERAÇÕES')
+        .setDescription(
+          [
+            'Fique por dentro de todos os dias e horários de live programados para a tropa:',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            state.agendaText || '_Nenhum horário cadastrado no momento. A moderação atualiza via `/agenda`._',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '🔔 *Ative os avisos nas plataformas para ser notificado ao entrar em campo!*',
+          ].join('\n')
+        ),
     ],
   };
 }
 
 function rankingPayload() {
-  const lines = cfg.patentes.map((p) => `${p.name} — a partir do **nível ${p.level}**`);
+  const lines = cfg.patentes.map((p) => `🎖️ **${p.name}** — A partir do **nível ${p.level}**`);
   return {
     embeds: [
       embed()
-        .setTitle('🏆 Patentes e XP')
+        .setTitle('🏆 HIERARQUIA & SISTEMA DE PATENTES')
         .setDescription(
           [
-            'Conversando você ganha XP e sobe de patente automaticamente.',
-            `Durante a live o XP vale **${cfg.xp.liveMultiplier}x**.`,
+            'A cada mensagem enviada na comunidade você ganha experiência (XP) e sobe de patente automaticamente!',
+            '',
+            `⚡ **Bônus de Operação:** Durante as lives ativas, o ganho de XP é multiplicado por **${cfg.xp.liveMultiplier}x**.`,
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '📋 **QUADRO DE PATENTES:**',
             '',
             ...lines,
-          ].join('\n'),
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '💡 *Consulte suas estatísticas atuais utilizando os comandos `/rank` e `/top` no canal apropriado.*',
+          ].join('\n')
         ),
     ],
   };
@@ -252,7 +314,7 @@ async function seedRecruits(guild) {
   let n = 0;
   for (const m of members.values()) {
     if (m.user.bot || m.roles.cache.hasAny(...patenteIds)) continue;
-    if (n >= 300) break; // limite por execução; rode /setup de novo para continuar
+    if (n >= 300) break;
     await m.roles.add(recruta, REASON).then(() => n++).catch(() => {});
   }
   return n;
@@ -295,8 +357,6 @@ async function runSetup(guild, report = async () => {}) {
     }
   }
 
-  // Mantém o gatilho dos esquadrões logo abaixo da Sala Geral. As salas
-  // temporárias são inseridas imediatamente depois desse gatilho.
   const generalId = state.channels.vc1;
   const triggerId = state.channels.createSquad;
   if (generalId && triggerId) {
