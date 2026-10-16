@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIR = path.join(__dirname, 'data');
+const DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const FILE = path.join(DIR, 'state.json');
 fs.mkdirSync(DIR, { recursive: true });
 
@@ -12,10 +12,12 @@ const state = {
   live: null, // { messageId, channelId, startedAt, sig, miss, title }
   xp: {}, // userId -> { xp, name }
   agendaText: null,
+  tempVoiceChannels: {}, // channelId -> ownerId das salas temporárias de voz
 };
 
 try {
   Object.assign(state, JSON.parse(fs.readFileSync(FILE, 'utf8')));
+  state.tempVoiceChannels ??= {};
 } catch {
   /* primeiro boot */
 }

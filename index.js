@@ -11,15 +11,14 @@ const {
   ActionRowBuilder,
   EmbedBuilder,
   MessageFlags,
-  AttachmentBuilder,
 } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const xp = require('./xp');
-const fs = require('fs');
-const path = require('path');
+const voiceRooms = require('./voiceRooms');
+const twitchChat = require('./twitchChat');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 if (!DISCORD_TOKEN || !GUILD_ID) {
@@ -29,7 +28,7 @@ if (!DISCORD_TOKEN || !GUILD_ID) {
 
 const client = new Client({
   // GuildMembers é "privileged": ative "Server Members Intent" no Developer Portal.
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
 });
 
 const EPHEMERAL = MessageFlags.Ephemeral;
@@ -39,10 +38,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Cria/atualiza cargos, canais e mensagens do servidor')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName('reset-servidor')
-    .setDescription('⚠️ APAGA TODOS os canais e categorias do servidor!')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('rank')
@@ -59,33 +54,41 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 ].map((c) => c.toJSON());
 
+const fs = require('fs');
+const path = require('path');
+const { AttachmentBuilder } = require('discord.js');
+const config = require('./config.js');
+
 async function enviarBackupParaDiscord(client) {
-  if (!cfg.backupChannelId) return;
+    if (!config.backupChannelId) return;
 
-  try {
-    const dataPath = path.join(process.env.DATA_DIR || './data', 'state.json');
+    try {
+        // Aponta para a pasta configurada ou usa './data' como padrão
+        const dataPath = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'state.json');
+        
+        // Verifica se o arquivo de dados já existe antes de tentar enviar
+        if (!fs.existsSync(dataPath)) {
+            console.log('[Backup] Nenhum arquivo state.json encontrado para enviar.');
+            return;
+        }
 
-    if (!fs.existsSync(dataPath)) {
-      console.log('[Backup] Nenhum arquivo state.json encontrado para enviar.');
-      return;
+        const canalBackup = await client.channels.fetch(config.backupChannelId);
+        if (!canalBackup) {
+            console.error('[Backup] Canal de backup não encontrado no servidor.');
+            return;
+        }
+
+        // Gera um anexo com um carimbo de data/hora no nome do arquivo
+        const file = new AttachmentBuilder(dataPath, { name: `backup-estado-${Date.now()}.json` });
+        
+        await canalBackup.send({ 
+            content: '📦 **Backup automático gerado:**', 
+            files: [file] 
+        });
+        console.log('[Backup] Arquivo enviado para o canal do Discord com sucesso.');
+    } catch (error) {
+        console.error('[Backup] Erro ao enviar o arquivo de estado:', error);
     }
-
-    const canalBackup = await client.channels.fetch(cfg.backupChannelId);
-    if (!canalBackup) {
-      console.error('[Backup] Canal de backup não encontrado no servidor.');
-      return;
-    }
-
-    const file = new AttachmentBuilder(dataPath, { name: `backup-estado-${Date.now()}.json` });
-
-    await canalBackup.send({
-      content: '📦 **Backup automático gerado:**',
-      files: [file],
-    });
-    console.log('[Backup] Arquivo enviado para o canal do Discord com sucesso.');
-  } catch (error) {
-    console.error('[Backup] Erro ao enviar o arquivo de estado:', error);
-  }
 }
 
 client.once(Events.ClientReady, async (c) => {
@@ -94,9 +97,15 @@ client.once(Events.ClientReady, async (c) => {
   const guild = await c.guilds.fetch(GUILD_ID);
   await guild.commands.set(commands);
   notifier.start(c);
+  twitchChat.start();
+  await voiceRooms.cleanupEmptyTemporaryChannels(guild);
   setInterval(() => {
-    enviarBackupParaDiscord(client);
-  }, INTERVALO_BACKUP);
+        enviarBackupParaDiscord(client);
+    }, INTERVALO_BACKUP);
+});
+
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+  voiceRooms.handleVoiceState(oldState, newState).catch((e) => console.warn('[voice-rooms]', e.message));
 });
 
 client.on(Events.MessageCreate, (msg) => {
@@ -129,20 +138,11 @@ client.on(Events.InteractionCreate, async (i) => {
           await i.deferReply({ flags: EPHEMERAL });
           try {
             const r = await runSetup(i.guild, (t) => i.editReply(t));
+            await voiceRooms.cleanupEmptyTemporaryChannels(i.guild);
             await i.editReply(`✅ Pronto! ${r.roles} cargos e ${r.channels} canais configurados. Pode rodar de novo quando quiser: não duplica nada.`);
           } catch (err) {
             console.error('[setup]', err);
             await i.editReply(`❌ Falhou: ${err.message}\nConfira se o bot tem permissão de Administrador e se o cargo dele está no topo da lista.`);
-          }
-          return;
-        }
-        case 'reset-servidor': {
-          await i.reply({ content: '🧹 **Iniciando a limpeza...** Apagando todas as categorias e canais do servidor.', flags: EPHEMERAL });
-          const channels = await i.guild.channels.fetch();
-          for (const [, channel] of channels) {
-            if (channel) {
-              await channel.delete().catch((err) => console.warn(`[reset] Não foi possível apagar ${channel?.name}:`, err.message));
-            }
           }
           return;
         }

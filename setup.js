@@ -50,6 +50,14 @@ async function ensureRoles(guild) {
 const kind = (t) =>
   t === ChannelType.GuildCategory ? 'category' : t === ChannelType.GuildVoice ? 'voice' : 'text';
 
+// O host anterior pode ter removido o state.json. Compara nomes ignorando emojis,
+// separadores e diferenças de acentuação para reencontrar canais já existentes.
+const normalizedName = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]/gu, '');
+
 function staffAllow(guild) {
   const ids = [state.roles.streamer, state.roles.mod, guild.client.user.id].filter(Boolean);
   return ids.map((id) => ({
@@ -80,7 +88,8 @@ async function ensureChannel(guild, key, spec) {
 
   let ch =
     (state.channels[key] && cache.get(state.channels[key])) ||
-    cache.find((c) => c.name === name && kind(c.type) === kind(type));
+    cache.find((c) => c.name === name && kind(c.type) === kind(type)) ||
+    cache.find((c) => normalizedName(c.name) === normalizedName(name) && kind(c.type) === kind(type));
 
   if (!ch) {
     ch = await guild.channels.create({
@@ -94,7 +103,7 @@ async function ensureChannel(guild, key, spec) {
     });
   } else {
     const patch = {};
-    if (ch.name !== name) patch.name = name;
+    if (ch.name !== name && normalizedName(ch.name) !== normalizedName(name)) patch.name = name;
     if (parent && ch.parentId !== parent.id) patch.parent = parent.id;
     if (topic !== undefined && 'topic' in ch && ch.topic !== topic) patch.topic = topic;
     if (userLimit !== undefined && ch.userLimit !== userLimit) patch.userLimit = userLimit;
@@ -283,6 +292,18 @@ async function runSetup(guild, report = async () => {}) {
         overwrites: overwritesFor(guild, def, cat),
       });
       channels++;
+    }
+  }
+
+  // Mantém o gatilho dos esquadrões logo abaixo da Sala Geral. As salas
+  // temporárias são inseridas imediatamente depois desse gatilho.
+  const generalId = state.channels.vc1;
+  const triggerId = state.channels.createSquad;
+  if (generalId && triggerId) {
+    const general = await guild.channels.fetch(generalId).catch(() => null);
+    const trigger = await guild.channels.fetch(triggerId).catch(() => null);
+    if (general && trigger && general.parentId === trigger.parentId) {
+      await trigger.setPosition(general.position + 1).catch((e) => console.warn('[setup] posição de Criar Esquadrão:', e.message));
     }
   }
   save();

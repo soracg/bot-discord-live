@@ -96,9 +96,7 @@ module.exports = {
       name: '🔊 ━ VOZ',
       channels: [
         { key: 'vc1', type: 'voice', name: '🔊｜Sala Geral' },
-        { key: 'vc2', type: 'voice', name: '🎮｜Squad 1' },
-        { key: 'vc3', type: 'voice', name: '🎮｜Squad 2' },
-        { key: 'vc4', type: 'voice', name: '🚁｜Piloto e Co-piloto', userLimit: 2 },
+        { key: 'createSquad', type: 'voice', name: '➕ Criar Esquadrão', topic: 'Entre para criar sua sala temporária de esquadrão.' },
         { key: 'afk', type: 'voice', name: '😴｜AFK' },
       ],
     },

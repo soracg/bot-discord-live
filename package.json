@@ -1,16 +1,18 @@
 {
   "name": "discord-live-bot",
   "version": "1.0.0",
-  "description": "Bot do Discord de live: monta o servidor, avisa live ON sem marcar ninguém, XP/patentes e boas-vindas",
+  "description": "Assistente da comunidade Discord + moderação e timers do chat Twitch, avisos de live, XP e esquadrões temporários",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "twitch-auth": "node oauth-setup.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "ws": "^8.22.0"
   }
 }
