@@ -1,3 +1,10 @@
+<ElicitationsGroup>
+
+Excelente raciocínio! Separar as ações em dois botões distintos (**Iniciar** e **Fechar**) resolve totalmente o problema de flood e dá o controle perfeito: o botão **Iniciar** cria a sala e puxa a tropa, e o botão **Fechar** encerra a missão, deleta a sala de voz e atualiza a embed com o horário de encerramento.
+
+Aqui está o seu novo **`squad.js`** com os botões ajustados (**Entrar**, **Suplente**, **Sair**, **Iniciar** e **Fechar**):
+
+```javascript
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
@@ -8,7 +15,9 @@ state.squads ??= {};
 const G = () => state.squads;
 
 function embedFor(s) {
-  const statusText = s.status === 'closed' ? `🔒 **[FECHADO às ${s.closedAt || 'agora'}]**` : '🟢 **[ABERTO]**';
+  let statusText = '🟢 **[ABERTO]**';
+  if (s.status === 'started') statusText = '🚀 **[EM ANDAMENTO]**';
+  if (s.status === 'closed') statusText = `🔒 **[FECHADO às ${s.closedAt || 'agora'}]**`;
 
   const lines = [
     `**Status:** ${statusText}`,
@@ -28,18 +37,22 @@ function embedFor(s) {
   }
 
   return new EmbedBuilder()
-    .setColor(s.status === 'closed' ? 0x555555 : cfg.brand.color)
+    .setColor(s.status === 'closed' ? 0x555555 : s.status === 'started' ? 0x00ff00 : cfg.brand.color)
     .setTitle(`🪖 CONVOCATÓRIA: ${s.jogo}`)
     .setDescription(lines.join('\n'))
     .setTimestamp();
 }
 
-function buttonRow(disabled = false) {
+function buttonRow(status = 'open') {
+  const isClosed = status === 'closed';
+  const isStarted = status === 'started';
+
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('squad:join').setLabel('Entrar').setEmoji('📥').setStyle(ButtonStyle.Success).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('squad:sub').setLabel('Suplente').setEmoji('🔄').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('squad:leave').setLabel('Sair').setEmoji('📤').setStyle(ButtonStyle.Danger).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('squad:start').setLabel('Iniciar / Fechar').setEmoji('🚀').setStyle(ButtonStyle.Primary)
+    new ButtonBuilder().setCustomId('squad:join').setLabel('Entrar').setEmoji('📥').setStyle(ButtonStyle.Success).setDisabled(isClosed || isStarted),
+    new ButtonBuilder().setCustomId('squad:sub').setLabel('Suplente').setEmoji('🔄').setStyle(ButtonStyle.Secondary).setDisabled(isClosed || isStarted),
+    new ButtonBuilder().setCustomId('squad:leave').setLabel('Sair').setEmoji('📤').setStyle(ButtonStyle.Danger).setDisabled(isClosed),
+    new ButtonBuilder().setCustomId('squad:start').setLabel('Iniciar').setEmoji('🚀').setStyle(ButtonStyle.Primary).setDisabled(isStarted || isClosed),
+    new ButtonBuilder().setCustomId('squad:close').setLabel('Fechar').setEmoji('🔒').setStyle(ButtonStyle.Secondary).setDisabled(isClosed || !isStarted)
   );
 }
 
@@ -50,7 +63,7 @@ async function refreshMessage(client, s) {
     if (!msg) return;
     await msg.edit({ 
       embeds: [embedFor(s)], 
-      components: [buttonRow(s.status === 'closed')], 
+      components: [buttonRow(s.status)], 
       allowedMentions: NO_PING 
     });
   } catch (e) {
@@ -90,7 +103,7 @@ module.exports = {
 
       const msg = await i.channel.send({ 
         embeds: [embedFor(s)], 
-        components: [buttonRow()], 
+        components: [buttonRow('open')], 
         allowedMentions: NO_PING 
       });
 
@@ -144,16 +157,18 @@ module.exports = {
     const userId = i.user.id;
     const action = i.customId.split(':')[1];
 
+    // --- BOTÃO INICIAR ---
     if (action === 'start') {
       if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
-        return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar/fechar o grupo.', flags: EPHEMERAL }).catch(() => {});
+        return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar o grupo.', flags: EPHEMERAL }).catch(() => {});
       }
 
-      s.status = 'closed';
-      s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      save();
+      if (s.status === 'started' || s.status === 'closed') {
+        return i.followUp({ content: 'Este esquadrão já foi iniciado ou fechado.', flags: EPHEMERAL }).catch(() => {});
+      }
 
-      // Força a atualização imediata da mensagem embed no canal
+      s.status = 'started';
+      save();
       await refreshMessage(client, s);
 
       try {
@@ -186,14 +201,41 @@ module.exports = {
           }).catch(() => {});
         }
       } catch (e) {
-        console.warn('[squad] erro ao gerenciar canal de voz:', e.message);
+        console.warn('[squad] erro ao criar canal de voz:', e.message);
       }
 
-      return i.followUp({ content: '🚀 Esquadrão fechado e iniciado com sucesso!', flags: EPHEMERAL }).catch(() => {});
+      return i.followUp({ content: '🚀 Esquadrão iniciado com sucesso!', flags: EPHEMERAL }).catch(() => {});
     }
 
-    if (s.status === 'closed') {
-      return i.followUp({ content: 'Este esquadrão já foi fechado/iniciado.', flags: EPHEMERAL }).catch(() => {});
+    // --- BOTÃO FECHAR ---
+    if (action === 'close') {
+      if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
+        return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode fechar o grupo.', flags: EPHEMERAL }).catch(() => {});
+      }
+
+      s.status = 'closed';
+      s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      save();
+      await refreshMessage(client, s);
+
+      // Deleta a call de voz criada, se ainda existir
+      try {
+        if (s.voiceChannelId) {
+          const guild = i.guild;
+          const voiceChan = guild.channels.cache.get(s.voiceChannelId);
+          if (voiceChan) {
+            await voiceChan.delete('Esquadrão encerrado pelo líder').catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn('[squad] erro ao deletar canal de voz:', e.message);
+      }
+
+      return i.followUp({ content: '🔒 Esquadrão fechado e canal de voz removido com sucesso!', flags: EPHEMERAL }).catch(() => {});
+    }
+
+    if (s.status === 'closed' || s.status === 'started') {
+      return i.followUp({ content: 'Esta convocatória já foi iniciada ou encerrada.', flags: EPHEMERAL }).catch(() => {});
     }
 
     s.entries = s.entries.filter((id) => id !== userId);
