@@ -8,22 +8,26 @@ state.squads ??= {};
 const G = () => state.squads;
 
 function embedFor(s) {
-  const descLines = [
+  const lines = [
     `**Detalhes da Missão:** ${s.detalhes}`,
     `**Líder do Esquadrão:** <@${s.hostId}>`,
     '',
     `👥 **Vagas Principais (${s.entries.length}/${s.vagas}):**`,
-    s.entries.length ? s.entries.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '_Ninguém na linha de frente ainda._',
+    s.entries.length ? s.entries.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '_Ninguém na linha de frente ainda._'
   ];
 
   if (s.suplentes && s.suplentes.length > 0) {
-    descLines.push('', `🔄 **Suplentes (Reserva):**`, s.suplentes.map((id, index) => `${index + 1}. <@${id}>`).join('\n'));
+    lines.push(
+      '',
+      `🔄 **Suplentes (Reserva):**`,
+      s.suplentes.map((id, index) => `${index + 1}. <@${id}>`).join('\n')
+    );
   }
 
   return new EmbedBuilder()
     .setColor(cfg.brand.color)
     .setTitle(`🪖 CONVOCATÓRIA: ${s.jogo}`)
-    .setDescription(descLines.join('\n')) // Junta tudo em uma única string perfeitamente formatada
+    .setDescription(lines.join('\n')) // Garante que é estritamente uma string única
     .setTimestamp();
 }
 
@@ -77,10 +81,8 @@ module.exports = {
     };
 
     try {
-      // Responde primeiro à interação de forma efêmera para evitar timeout
       await i.deferReply({ flags: EPHEMERAL });
 
-      // Envia a convocatória no canal atual
       const msg = await i.channel.send({ 
         embeds: [embedFor(s)], 
         components: [buttonRow()], 
