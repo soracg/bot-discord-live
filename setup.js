@@ -11,6 +11,7 @@ const { state, save, flush } = require('./store');
 
 const NO_PING = { parse: [] };
 const REASON = 'Setup automático do bot';
+const BANNER_URL = 'https://i.imgur.com/TxsOxfe.jpeg';
 
 // ───────────────────────── Cargos ─────────────────────────
 
@@ -20,7 +21,7 @@ async function ensureRoles(guild) {
   let count = 0;
 
   for (const def of defs) {
-    const wantHoist = def.hoist ?? false;
+    const wantHoist = def.hoist ?? true;
     let role =
       (state.roles[def.key] && guild.roles.cache.get(state.roles[def.key])) ||
       guild.roles.cache.find((r) => r.name === def.name && !r.managed);
@@ -119,9 +120,10 @@ async function ensureChannel(guild, key, spec) {
 // ───────────────────────── Mensagens fixas ─────────────────────────
 
 const embed = () => {
-  const e = new EmbedBuilder().setColor(cfg.brand.color).setFooter({ text: `${cfg.brand.name} • Comando Central` });
-  if (cfg.brand.banner) e.setImage(cfg.brand.banner);
-  return e;
+  return new EmbedBuilder()
+    .setColor(cfg.brand.color)
+    .setImage(cfg.brand.banner || BANNER_URL)
+    .setFooter({ text: `${cfg.brand.name} • Comando Central` });
 };
 
 const ch = (key) => (state.channels[key] ? `<#${state.channels[key]}>` : '`canal`');
@@ -185,20 +187,32 @@ function rolesPayload() {
       new ButtonBuilder().setCustomId(`role:${r.key}`).setLabel(r.label).setEmoji(r.emoji).setStyle(ButtonStyle.Secondary)
     )
   );
+
+  const formatRoles = (rolesList) =>
+    rolesList.map((r) => (state.roles[r.key] ? `<@&${state.roles[r.key]}>` : `**${r.name}**`)).join(' • ');
+
   return {
     embeds: [
       embed()
-        .setTitle('🎭 PAINEL DE ESPECIALIZAÇÕES')
+        .setTitle('🎭 ESTRUTURA DE CARGOS & ESPECIALIZAÇÕES')
         .setDescription(
           [
-            'Selecione abaixo os jogos que você costuma jogar para exibir suas especialidades em seu perfil:',
+            'Confira a divisão de cargos da nossa tropa organizados por hierarquia e especialização:',
             '',
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
             '',
-            ' Clique nos botões abaixo para **adicionar** ou **remover** os cargos.',
-            ' Eles servem para identificação na comunidade. Ninguém será marcado por eles.',
+            '🛡️ **COMANDO & MODERAÇÃO:**',
+            formatRoles(cfg.staffRoles),
+            '',
+            '🎖️ **HIERARQUIA & PATENTES DE XP:**',
+            formatRoles(cfg.patentes),
+            '',
+            '🎮 **ESPECIALIZAÇÕES DE JOGOS:**',
+            formatRoles(cfg.interestRoles),
             '',
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '💡 *Clique nos botões abaixo para **adicionar** ou **remover** suas especializações de jogos no seu perfil!*',
           ].join('\n')
         ),
     ],
