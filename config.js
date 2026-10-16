@@ -11,6 +11,21 @@ module.exports = {
     backupChannelId: process.env.BACKUP_CHANNEL_ID
   },
 
+  // Adicione esta propriedade "backup" dentro do module.exports do config.js:
+  backup: {
+    channels: {
+      rank: process.env.BACKUP_RANK_ID || '1560694103707091004',
+      xp: process.env.BACKUP_XP_ID || '1560694073612959975',
+      sorteio: process.env.BACKUP_SORTEIO_ID || '1560694144836567071',
+    },
+    everyMin: {
+      rank: 30,
+      xp: 5,
+      sorteio: 30,
+    },
+    keep: 10,
+  },
+
   links: {
     twitch: env.TWITCH_LOGIN ? `https://twitch.tv/${env.TWITCH_LOGIN}` : null,
     kick: env.KICK_SLUG ? `https://kick.com/${env.KICK_SLUG}` : null,
