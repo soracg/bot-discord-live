@@ -1,22 +1,19 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
-const { progress } = require('./xp');
-const voiceRooms = require('./voiceRooms');
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const NO_PING = { parse: [] };
 state.squads ??= {};
-const G = () => state.squads; // messageId -> squad
+const G = () => state.squads;
 
 function embedFor(s) {
-  const e = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(cfg.brand.color)
     .setTitle(`🪖 CONVOCATÓRIA: ${s.jogo}`)
     .setDescription([
       `**Detalhes da Missão:** ${s.detalhes}`,
       `**Líder do Esquadrão:** <@${s.hostId}>`,
-      `**Nível Mínimo:** Soldado (Nível 5+)`,
       '',
       `👥 **Vagas Principais (${s.entries.length}/${s.vagas}):**`,
       s.entries.length ? s.entries.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '_Ninguém na linha de frente ainda._',
@@ -24,7 +21,6 @@ function embedFor(s) {
       s.suplentes.length ? `🔄 **Suplentes (Reserva):**\n` + s.suplentes.map((id, index) => `${index + 1}. <@${id}>`).join('\n') : '',
     ].filter(Boolean))
     .setTimestamp();
-  return e;
 }
 
 const buttonRow = (disabled = false) =>
@@ -51,9 +47,6 @@ module.exports = {
     .addStringOption((o) => o.setName('detalhes').setDescription('Detalhes da missão / objetivos').setRequired(true)),
 
   async execute(client, i) {
-    // Requisito: Patente Soldado (Nível 5+)
-    }
-
     const jogo = i.options.getString('jogo', true);
     const vagas = i.options.getInteger('vagas', true);
     const detalhes = i.options.getString('detalhes', true);
@@ -65,7 +58,7 @@ module.exports = {
       vagas,
       detalhes,
       hostId: i.user.id,
-      entries: [i.user.id], // O criador já entra na vaga principal
+      entries: [i.user.id],
       suplentes: [],
       status: 'open',
     };
@@ -99,16 +92,14 @@ module.exports = {
       save();
       await refreshMessage(client, s);
 
-      // Cria a sala de voz temporária e move os membros se estiverem em call
       try {
         const guild = i.guild;
         const tempChan = await guild.channels.create({
-          name: `🚁 Esquadrão - ${s.jogo}`,
-          type: 2, // Canal de voz
-          parent: state.channels?.voiceCategory || null, // Se houver categoria de voz
+          name: `🚁 Esq. - ${s.jogo}`,
+          type: 2,
+          parent: state.channels?.voiceCategory || null,
         });
         
-        // Tenta mover os usuários conectados nas principais para a nova sala
         for (const memberId of s.entries) {
           const member = await guild.members.fetch(memberId).catch(() => null);
           if (member?.voice?.channel) {
@@ -126,7 +117,6 @@ module.exports = {
       return i.reply({ content: 'Este esquadrão já foi fechado/iniciado.', flags: EPHEMERAL });
     }
 
-    // Remove de ambas as listas para evitar duplicidade
     s.entries = s.entries.filter((id) => id !== userId);
     s.suplentes = s.suplentes.filter((id) => id !== userId);
 
@@ -142,11 +132,9 @@ module.exports = {
       s.suplentes.push(userId);
       i.reply({ content: '🔄 Você entrou na lista de **suplentes**.', flags: EPHEMERAL });
     } else if (action === 'leave') {
-      // Se era o líder saindo, avisa
       i.reply({ content: '📤 Você saiu do esquadrão.', flags: EPHEMERAL });
     }
 
-    // Se alguém saiu da principal e há suplentes, move o primeiro suplente para a principal
     if (s.entries.length < s.vagas && s.suplentes.length > 0) {
       const promoted = s.suplentes.shift();
       s.entries.push(promoted);
