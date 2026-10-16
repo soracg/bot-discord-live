@@ -1,10 +1,3 @@
-<ElicitationsGroup>
-
-Excelente raciocínio! Separar as ações em dois botões distintos (**Iniciar** e **Fechar**) resolve totalmente o problema de flood e dá o controle perfeito: o botão **Iniciar** cria a sala e puxa a tropa, e o botão **Fechar** encerra a missão, deleta a sala de voz e atualiza a embed com o horário de encerramento.
-
-Aqui está o seu novo **`squad.js`** com os botões ajustados (**Entrar**, **Suplente**, **Sair**, **Iniciar** e **Fechar**):
-
-```javascript
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
@@ -157,7 +150,6 @@ module.exports = {
     const userId = i.user.id;
     const action = i.customId.split(':')[1];
 
-    // --- BOTÃO INICIAR ---
     if (action === 'start') {
       if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
         return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar o grupo.', flags: EPHEMERAL }).catch(() => {});
@@ -207,7 +199,6 @@ module.exports = {
       return i.followUp({ content: '🚀 Esquadrão iniciado com sucesso!', flags: EPHEMERAL }).catch(() => {});
     }
 
-    // --- BOTÃO FECHAR ---
     if (action === 'close') {
       if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
         return i.followUp({ content: 'Apenas o líder do esquadrão ou a moderação pode fechar o grupo.', flags: EPHEMERAL }).catch(() => {});
@@ -218,7 +209,6 @@ module.exports = {
       save();
       await refreshMessage(client, s);
 
-      // Deleta a call de voz criada, se ainda existir
       try {
         if (s.voiceChannelId) {
           const guild = i.guild;
