@@ -8,7 +8,10 @@ state.squads ??= {};
 const G = () => state.squads;
 
 function embedFor(s) {
+  const statusText = s.status === 'closed' ? `🔒 **[FECHADO às ${s.closedAt || 'agora'}]**` : '🟢 **[ABERTO]**';
+
   const lines = [
+    `**Status:** ${statusText}`,
     `**Detalhes da Missão:** ${s.detalhes}`,
     `**Líder do Esquadrão:** <@${s.hostId}>`,
     '',
@@ -25,9 +28,9 @@ function embedFor(s) {
   }
 
   return new EmbedBuilder()
-    .setColor(cfg.brand.color)
+    .setColor(s.status === 'closed' ? 0x555555 : cfg.brand.color)
     .setTitle(`🪖 CONVOCATÓRIA: ${s.jogo}`)
-    .setDescription(lines.join('\n')) // Garante que é estritamente uma string única
+    .setDescription(lines.join('\n'))
     .setTimestamp();
 }
 
@@ -78,6 +81,8 @@ module.exports = {
       entries: [i.user.id],
       suplentes: [],
       status: 'open',
+      voiceChannelId: null,
+      closedAt: null,
     };
 
     try {
@@ -114,29 +119,47 @@ module.exports = {
       if (i.user.id !== s.hostId && !i.member.permissions.has('ManageMessages')) {
         return i.reply({ content: 'Apenas o líder do esquadrão ou a moderação pode iniciar/fechar o grupo.', flags: EPHEMERAL });
       }
+
       s.status = 'closed';
+      s.closedAt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       save();
       await refreshMessage(client, s);
 
       try {
         const guild = i.guild;
-        const tempChan = await guild.channels.create({
-          name: `🚁 Esq. - ${s.jogo}`,
-          type: 2,
-          parent: i.channel.parentId || null,
-        });
         
+        // Se já existe uma call criada para este esquadrão, reaproveita. Se não, cria uma nova.
+        let tempChan = s.voiceChannelId ? guild.channels.cache.get(s.voiceChannelId) : null;
+
+        if (!tempChan) {
+          tempChan = await guild.channels.create({
+            name: `🚁 Esq. - ${s.jogo}`,
+            type: 2,
+            parent: i.channel.parentId || null,
+          });
+          s.voiceChannelId = tempChan.id;
+          save();
+        }
+        
+        // Move os membros das vagas principais para a sala de voz
         for (const memberId of s.entries) {
           const member = await guild.members.fetch(memberId).catch(() => null);
           if (member?.voice?.channel) {
             await member.voice.setChannel(tempChan).catch(() => {});
           }
         }
+
+        // Marca todo mundo no chat de texto para se situarem
+        const mentions = s.entries.map((id) => `<@${id}>`).join(' ');
+        await i.channel.send({
+          content: `🚀 **Esquadrão Iniciado!** Canal de voz pronto: <#${tempChan.id}>\nChamando a tropa: ${mentions}`,
+          allowedMentions: { users: s.entries }
+        });
       } catch (e) {
-        console.warn('[squad] erro ao criar canal de voz:', e.message);
+        console.warn('[squad] erro ao gerenciar canal de voz:', e.message);
       }
 
-      return i.reply({ content: '🚀 Esquadrão iniciado! Sala de voz criada e vaga fechada.', flags: EPHEMERAL });
+      return i.reply({ content: '🚀 Esquadrão fechado e iniciado com sucesso!', flags: EPHEMERAL });
     }
 
     if (s.status === 'closed') {
