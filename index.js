@@ -14,7 +14,6 @@ const {
 } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
-const loja = require('./loja');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const xp = require('./xp');
@@ -22,6 +21,7 @@ const voiceRooms = require('./voiceRooms');
 const twitchChat = require('./twitchChat');
 const backup = require('./backup');
 const sorteio = require('./sorteio');
+const loja = require('./loja');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 if (!DISCORD_TOKEN || !GUILD_ID) {
@@ -50,9 +50,6 @@ const commands = [
     .setName('rank')
     .setDescription('Mostra sua patente e XP')
     .addUserOption((o) => o.setName('membro').setDescription('Ver outro membro')),
-  new SlashCommandBuilder()
-  .setName('loja')
-  .setDescription('Troque seu XP por recompensas exclusivas'),
   new SlashCommandBuilder().setName('top').setDescription('Top 10 da tropa'),
   new SlashCommandBuilder()
     .setName('agenda')
@@ -62,7 +59,9 @@ const commands = [
     .setName('livetest')
     .setDescription('Mostra um exemplo do aviso de live (apaga em 20s)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-  // Comando de Sorteio registrado
+  new SlashCommandBuilder()
+    .setName('loja')
+    .setDescription('Troque seu XP por recompensas exclusivas'),
   new SlashCommandBuilder()
     .setName('sorteio')
     .setDescription('Gerencia sorteios no servidor')
@@ -104,7 +103,6 @@ client.once(Events.ClientReady, async (c) => {
   const guild = await c.guilds.fetch(GUILD_ID);
   await guild.commands.set(commands);
 
-  // Restaura dados do Discord caso o state local esteja vazio
   await backup.restoreIfFresh(c);
 
   notifier.start(c);
@@ -150,23 +148,21 @@ client.on(Events.InteractionCreate, async (i) => {
           try {
             const r = await runSetup(i.guild, (t) => i.editReply(t));
             await voiceRooms.cleanupEmptyTemporaryChannels(i.guild);
-            await i.editReply(`✅ Pronto! ${r.roles} cargos e ${r.channels} canais configurados. Pode rodar de novo quando quiser: não duplica nada.`);
+            await i.editReply(`✅ Pronto! ${r.roles} cargos e ${r.channels} canais configurados.`);
           } catch (err) {
             console.error('[setup]', err);
-            await i.editReply(`❌ Falhou: ${err.message}\nConfira se o bot tem permissão de Administrador e se o cargo dele está no topo da lista.`);
+            await i.editReply(`❌ Falhou: ${err.message}`);
           }
           return;
-        }
-        case 'loja':
-        return loja.execute(client, i);
         }
         case 'rank': {
           const user = i.options.getUser('membro') ?? i.user;
           const member = await i.guild.members.fetch(user.id).catch(() => null);
           return i.reply({ embeds: [xp.rankEmbed(user, member)], allowedMentions: NO_PING });
         }
-        case 'top':
+        case 'top': {
           return i.reply({ embeds: [xp.topEmbed()], allowedMentions: NO_PING });
+        }
         case 'agenda': {
           const input = new TextInputBuilder()
             .setCustomId('texto')
@@ -184,7 +180,10 @@ client.on(Events.InteractionCreate, async (i) => {
         }
         case 'livetest': {
           const ok = await notifier.sendTest(client);
-          return i.reply({ content: ok ? 'Exemplo enviado em 🔴｜live-on (some em 20s).' : 'Rode /setup primeiro.', flags: EPHEMERAL });
+          return i.reply({ content: ok ? 'Exemplo enviado.' : 'Rode /setup primeiro.', flags: EPHEMERAL });
+        }
+        case 'loja': {
+          return loja.execute(client, i);
         }
         case 'sorteio': {
           return sorteio.onCommand(client, i);
@@ -200,16 +199,16 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     if (i.isButton()) {
+      if (i.customId.startsWith('loja:')) {
+        return loja.onButton(client, i);
+      }
       if (i.customId.startsWith('sorteio:')) {
         return sorteio.onButton(client, i);
       }
-      if (i.customId.startsWith('loja:')) {
-  return loja.onButton(client, i);
-}
       if (i.customId.startsWith('role:')) {
         const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
         const roleId = def && state.roles[def.key];
-        if (!roleId) return i.reply({ content: 'Cargo indisponível. Peça para a staff rodar /setup.', flags: EPHEMERAL });
+        if (!roleId) return i.reply({ content: 'Cargo indisponível.', flags: EPHEMERAL });
         const has = i.member.roles.cache.has(roleId);
         await (has ? i.member.roles.remove(roleId) : i.member.roles.add(roleId));
         return i.reply({ content: has ? `Cargo **${def.label}** removido.` : `Cargo **${def.label}** adicionado!`, flags: EPHEMERAL });
