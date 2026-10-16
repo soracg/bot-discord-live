@@ -19,6 +19,8 @@ const notifier = require('./notifier');
 const xp = require('./xp');
 const voiceRooms = require('./voiceRooms');
 const twitchChat = require('./twitchChat');
+const backup = require('./backup');
+const sorteio = require('./sorteio');
 
 const { DISCORD_TOKEN, GUILD_ID } = process.env;
 if (!DISCORD_TOKEN || !GUILD_ID) {
@@ -27,8 +29,12 @@ if (!DISCORD_TOKEN || !GUILD_ID) {
 }
 
 const client = new Client({
-  // GuildMembers é "privileged": ative "Server Members Intent" no Developer Portal.
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
 });
 
 const EPHEMERAL = MessageFlags.Ephemeral;
@@ -52,56 +58,57 @@ const commands = [
     .setName('livetest')
     .setDescription('Mostra um exemplo do aviso de live (apaga em 20s)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+  // Comando de Sorteio registrado
+  new SlashCommandBuilder()
+    .setName('sorteio')
+    .setDescription('Gerencia sorteios no servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addSubcommand((sub) =>
+      sub
+        .setName('criar')
+        .setDescription('Cria um novo sorteio')
+        .addStringOption((o) => o.setName('premio').setDescription('Prêmio do sorteio').setRequired(true))
+        .addStringOption((o) => o.setName('duracao').setDescription('Ex: 30m, 2h, 1d').setRequired(true))
+        .addIntegerOption((o) => o.setName('vencedores').setDescription('Quantidade de vencedores (padrão: 1)'))
+        .addIntegerOption((o) => o.setName('nivel_minimo').setDescription('Nível mínimo de XP para participar'))
+        .addChannelOption((o) => o.setName('canal').setDescription('Canal para postar o sorteio'))
+    )
+    .addSubcommand((sub) => sub.setName('listar').setDescription('Lista sorteios ativos'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('encerrar')
+        .setDescription('Encerra um sorteio')
+        .addStringOption((o) => o.setName('id').setDescription('ID do sorteio'))
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('rerolar')
+        .setDescription('Sorteia novos ganhadores')
+        .addStringOption((o) => o.setName('id').setDescription('ID do sorteio'))
+        .addIntegerOption((o) => o.setName('quantidade').setDescription('Quantidade de novos vencedores'))
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('cancelar')
+        .setDescription('Cancela um sorteio')
+        .addStringOption((o) => o.setName('id').setDescription('ID do sorteio'))
+    ),
 ].map((c) => c.toJSON());
-
-const fs = require('fs');
-const path = require('path');
-const { AttachmentBuilder } = require('discord.js');
-const config = require('./config.js');
-
-async function enviarBackupParaDiscord(client) {
-    if (!config.backupChannelId) return;
-
-    try {
-        // Aponta para a pasta configurada ou usa './data' como padrão
-        const dataPath = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'state.json');
-        
-        // Verifica se o arquivo de dados já existe antes de tentar enviar
-        if (!fs.existsSync(dataPath)) {
-            console.log('[Backup] Nenhum arquivo state.json encontrado para enviar.');
-            return;
-        }
-
-        const canalBackup = await client.channels.fetch(config.backupChannelId);
-        if (!canalBackup) {
-            console.error('[Backup] Canal de backup não encontrado no servidor.');
-            return;
-        }
-
-        // Gera um anexo com um carimbo de data/hora no nome do arquivo
-        const file = new AttachmentBuilder(dataPath, { name: `backup-estado-${Date.now()}.json` });
-        
-        await canalBackup.send({ 
-            content: '📦 **Backup automático gerado:**', 
-            files: [file] 
-        });
-        console.log('[Backup] Arquivo enviado para o canal do Discord com sucesso.');
-    } catch (error) {
-        console.error('[Backup] Erro ao enviar o arquivo de estado:', error);
-    }
-}
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logado como ${c.user.tag}`);
-  const INTERVALO_BACKUP = 1000 * 60 * 60 * 6;
   const guild = await c.guilds.fetch(GUILD_ID);
   await guild.commands.set(commands);
+
+  // Restaura dados do Discord caso o state local esteja vazio
+  await backup.restoreIfFresh(c);
+
   notifier.start(c);
   twitchChat.start();
+  sorteio.start(c);
+  backup.start(c);
+
   await voiceRooms.cleanupEmptyTemporaryChannels(guild);
-  setInterval(() => {
-        enviarBackupParaDiscord(client);
-    }, INTERVALO_BACKUP);
 });
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -172,6 +179,9 @@ client.on(Events.InteractionCreate, async (i) => {
           const ok = await notifier.sendTest(client);
           return i.reply({ content: ok ? 'Exemplo enviado em 🔴｜live-on (some em 20s).' : 'Rode /setup primeiro.', flags: EPHEMERAL });
         }
+        case 'sorteio': {
+          return sorteio.onCommand(client, i);
+        }
       }
     }
 
@@ -182,13 +192,18 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ content: '📅 Agenda atualizada!', flags: EPHEMERAL });
     }
 
-    if (i.isButton() && i.customId.startsWith('role:')) {
-      const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
-      const roleId = def && state.roles[def.key];
-      if (!roleId) return i.reply({ content: 'Cargo indisponível. Peça para a staff rodar /setup.', flags: EPHEMERAL });
-      const has = i.member.roles.cache.has(roleId);
-      await (has ? i.member.roles.remove(roleId) : i.member.roles.add(roleId));
-      return i.reply({ content: has ? `Cargo **${def.label}** removido.` : `Cargo **${def.label}** adicionado!`, flags: EPHEMERAL });
+    if (i.isButton()) {
+      if (i.customId.startsWith('sorteio:')) {
+        return sorteio.onButton(client, i);
+      }
+      if (i.customId.startsWith('role:')) {
+        const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
+        const roleId = def && state.roles[def.key];
+        if (!roleId) return i.reply({ content: 'Cargo indisponível. Peça para a staff rodar /setup.', flags: EPHEMERAL });
+        const has = i.member.roles.cache.has(roleId);
+        await (has ? i.member.roles.remove(roleId) : i.member.roles.add(roleId));
+        return i.reply({ content: has ? `Cargo **${def.label}** removido.` : `Cargo **${def.label}** adicionado!`, flags: EPHEMERAL });
+      }
     }
   } catch (err) {
     console.error('[interaction]', err);
