@@ -19,6 +19,8 @@ const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const xp = require('./xp');
 const voiceRooms = require('./voiceRooms');
+const http = require('http');
+const PORT = process.env.PORT || 3000;
 const twitchChat = require('./twitchChat');
 const backup = require('./backup');
 const sorteio = require('./sorteio');
@@ -163,8 +165,8 @@ client.on(Events.InteractionCreate, async (i) => {
           return;
         }
         case 'squad': {
-  return squad.execute(client, i);
-}
+          return squad.execute(client, i);
+        }
         case 'rank': {
           const user = i.options.getUser('membro') ?? i.user;
           const member = await i.guild.members.fetch(user.id).catch(() => null);
@@ -216,8 +218,8 @@ client.on(Events.InteractionCreate, async (i) => {
         return sorteio.onButton(client, i);
       }
       if (i.customId.startsWith('squad:')) {
-  return squad.onButton(client, i);
-}
+        return squad.onButton(client, i);
+      }
       if (i.customId.startsWith('role:')) {
         const def = cfg.interestRoles.find((r) => r.key === i.customId.slice(5));
         const roleId = def && state.roles[def.key];
@@ -233,6 +235,14 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.deferred || i.replied) i.followUp(msg).catch(() => {});
     else i.reply(msg).catch(() => {});
   }
+});
+
+// Servidor HTTP posicionado corretamente no escopo principal para o Render
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot Discord Live ativo e operando!\n');
+}).listen(PORT, () => {
+  console.log(`[web] Servidor HTTP ouvindo na porta ${PORT}`);
 });
 
 client.login(DISCORD_TOKEN);

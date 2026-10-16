@@ -9,16 +9,14 @@ const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
 
 // Cada "tipo" é um canal de backup com o que vai dentro dele.
 const KINDS = {
-  // Estado completo (state.json): canais, cargos, mensagens fixas, agenda e XP
   rank: {
     label: '🏆 Backup do ranking',
-    prefixes: ['rank-', 'backup-estado-'], // o segundo é o nome do backup antigo do bot
+    prefixes: ['rank-', 'backup-estado-'],
     snapshot: () => (Object.keys(state.roles).length || Object.keys(state.xp).length ? { ...state, live: null } : null),
     valid: (d) => isObj(d) && isObj(d.xp),
     apply: (d) => Object.assign(state, { ...d, live: state.live ?? null }),
     summary: (d) => `${Object.keys(d.xp).length} jogadores`,
   },
-  // Só a tabela de XP, enviada com mais frequência: é o dado que não dá para recriar
   xp: {
     label: '⭐ Backup do XP',
     prefixes: ['xp-'],
@@ -27,7 +25,6 @@ const KINDS = {
     apply: (d) => mergeXp(d.xp, 'max'),
     summary: (d) => `${Object.keys(d.xp).length} jogadores`,
   },
-  // Sorteios (state.sorteios), quando existirem
   sorteio: {
     label: '🎉 Backup dos sorteios',
     prefixes: ['sorteio-'],
@@ -51,7 +48,7 @@ function mergeXp(incoming, mode = 'max') {
   }
 }
 
-const lastHash = {}; // kind -> hash do último backup enviado/restaurado
+const lastHash = {};
 let busy = false;
 
 async function getChannel(client, kind) {
@@ -63,7 +60,7 @@ async function getChannel(client, kind) {
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 
-/** Envia o backup de um tipo (se mudou ou se force=true). */
+/** Envia ou edita o backup de um tipo para evitar flood no canal. */
 async function runKind(client, kind, force = false) {
   const def = KINDS[kind];
   const data = def.snapshot();
@@ -77,14 +74,40 @@ async function runKind(client, kind, force = false) {
     console.warn(`[backup] canal "${kind}" não encontrado (confira o ID e as permissões do bot)`);
     return false;
   }
+
   try {
-    await ch.send({
-      content: `${def.label} • ${def.summary(data)}`,
-      files: [new AttachmentBuilder(Buffer.from(json), { name: `${def.prefixes[0]}${stamp()}.json` })],
-      allowedMentions: NO_PING,
-    });
+    const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
+    const mine = msgs ? [...msgs.values()].filter((m) => backupFile(m, client, kind)) : [];
+    
+    const attachment = new AttachmentBuilder(Buffer.from(json), { name: `${def.prefixes[0]}${stamp()}.json` });
+    const content = `${def.label}\n📊 ${def.summary(data)} *(Atualizado em: <t:${Math.floor(Date.now() / 1000)}:R>)*`;
+
+    if (mine.length > 0) {
+      // Edita a mensagem mais recente em vez de criar uma nova (acaba com o flood)
+      const latestMsg = mine[0];
+      await latestMsg.edit({
+        content,
+        files: [attachment],
+        allowedMentions: NO_PING,
+      }).catch(async () => {
+        // Se falhar ao editar (por ex. mensagem muito antiga), envia uma nova
+        await ch.send({ content, files: [attachment], allowedMentions: NO_PING });
+      });
+
+      // Deleta eventuais duplicadas antigas para manter limpo
+      for (const oldMsg of mine.slice(1)) {
+        await oldMsg.delete().catch(() => {});
+      }
+    } else {
+      // Se não houver nenhuma mensagem do bot ainda, envia a primeira
+      await ch.send({
+        content,
+        files: [attachment],
+        allowedMentions: NO_PING,
+      });
+    }
+
     lastHash[kind] = hash;
-    await prune(client, ch, kind);
     return true;
   } catch (e) {
     console.warn(`[backup] ${kind}:`, e.message);
@@ -92,16 +115,7 @@ async function runKind(client, kind, force = false) {
   }
 }
 
-/** Mantém só os últimos N backups do bot no canal. */
-async function prune(client, ch, kind) {
-  const msgs = await ch.messages.fetch({ limit: 50 }).catch(() => null);
-  if (!msgs) return;
-  const mine = [...msgs.values()].filter((m) => backupFile(m, client, kind));
-  for (const m of mine.slice(cfg.backup.keep)) await m.delete().catch(() => {});
-}
-
 function backupFile(msg, client, kind) {
-  // Só mensagens do próprio bot: sem o Message Content Intent o Discord esconde anexos de outras pessoas.
   if (msg.author.id !== client.user.id) return null;
   return msg.attachments.find((a) => a.name?.endsWith('.json') && KINDS[kind].prefixes.some((p) => a.name.startsWith(p))) ?? null;
 }
@@ -116,7 +130,7 @@ async function download(att) {
 async function latest(client, kind) {
   const ch = await getChannel(client, kind);
   if (!ch) return null;
-  const msgs = await ch.messages.fetch({ limit: 50 }).catch(() => null);
+  const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
   if (!msgs) return null;
   for (const m of msgs.values()) {
     const att = backupFile(m, client, kind);
@@ -145,7 +159,7 @@ async function restoreFromChannels(client) {
   return done;
 }
 
-/** No boot sem state.json (disco perdido / host novo), busca tudo no Discord. */
+/** No boot sem state.json, busca tudo no Discord. */
 async function restoreIfFresh(client) {
   if (!isFresh()) return false;
   const done = await restoreFromChannels(client);
@@ -157,10 +171,6 @@ async function restoreIfFresh(client) {
   return true;
 }
 
-/**
- * Restaura a partir de um arquivo .json enviado por alguém (ex.: backup antigo).
- * completo=false: só XP (somado ao atual), agenda e sorteios. completo=true: também canais, cargos e mensagens.
- */
 function restoreFromFile(data, completo = false) {
   if (!KINDS.rank.valid(data)) throw new Error('arquivo inválido: não encontrei a tabela de XP.');
   const hash = sha(JSON.stringify(data));
@@ -183,7 +193,6 @@ function restoreFromFile(data, completo = false) {
   return Object.keys(data.xp).length;
 }
 
-/** Envia todos os backups agora. Retorna quantos foram enviados. */
 async function runAll(client, force = false) {
   if (busy) return 0;
   busy = true;
