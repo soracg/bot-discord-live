@@ -23,19 +23,28 @@ function embedFor(s) {
     .setTimestamp();
 }
 
-const buttonRow = (disabled = false) =>
-  new ActionRowBuilder().addComponents(
+function buttonRow(disabled = false) {
+  return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('squad:join').setLabel('Entrar').setEmoji('📥').setStyle(ButtonStyle.Success).setDisabled(disabled),
     new ButtonBuilder().setCustomId('squad:sub').setLabel('Suplente').setEmoji('🔄').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
     new ButtonBuilder().setCustomId('squad:leave').setLabel('Sair').setEmoji('📤').setStyle(ButtonStyle.Danger).setDisabled(disabled),
     new ButtonBuilder().setCustomId('squad:start').setLabel('Iniciar / Fechar').setEmoji('🚀').setStyle(ButtonStyle.Primary)
   );
+}
 
 async function refreshMessage(client, s) {
-  const ch = await client.channels.fetch(s.channelId).catch(() => null);
-  const msg = ch?.isTextBased() ? await ch.messages.fetch(s.id).catch(() => null) : null;
-  if (!msg) return;
-  await msg.edit({ embeds: [embedFor(s)], components: [buttonRow(s.status === 'closed')], allowedMentions: NO_PING }).catch(() => {});
+  try {
+    const ch = await client.channels.fetch(s.channelId).catch(() => null);
+    const msg = ch?.isTextBased() ? await ch.messages.fetch(s.id).catch(() => null) : null;
+    if (!msg) return;
+    await msg.edit({ 
+      embeds: [embedFor(s)], 
+      components: [buttonRow(s.status === 'closed')], 
+      allowedMentions: NO_PING 
+    });
+  } catch (e) {
+    console.warn('[squad] Erro ao atualizar mensagem:', e.message);
+  }
 }
 
 module.exports = {
@@ -52,7 +61,7 @@ module.exports = {
     const detalhes = i.options.getString('detalhes', true);
 
     const s = {
-      id: 'tmp',
+      id: '',
       channelId: i.channelId,
       jogo,
       vagas,
@@ -63,18 +72,29 @@ module.exports = {
       status: 'open',
     };
 
-    let msg;
     try {
-      msg = await i.channel.send({ embeds: [embedFor(s)], components: [buttonRow()], allowedMentions: NO_PING });
+      // Responde primeiro à interação de forma efêmera para evitar timeout
+      await i.deferReply({ flags: EPHEMERAL });
+
+      // Envia a convocatória no canal atual
+      const msg = await i.channel.send({ 
+        embeds: [embedFor(s)], 
+        components: [buttonRow()], 
+        allowedMentions: NO_PING 
+      });
+
+      s.id = msg.id;
+      G()[s.id] = s;
+      save();
+
+      return i.editReply({ content: '✅ Convocatória de esquadrão criada com sucesso!' });
     } catch (e) {
-      return i.reply({ content: `❌ Erro ao enviar convocatória: ${e.message}`, flags: EPHEMERAL });
+      console.error('[squad] Erro ao criar convocatória:', e);
+      if (i.deferred || i.replied) {
+        return i.editReply({ content: `❌ Erro ao criar convocatória: ${e.message}` });
+      }
+      return i.reply({ content: `❌ Erro ao criar convocatória: ${e.message}`, flags: EPHEMERAL });
     }
-
-    s.id = msg.id;
-    G()[s.id] = s;
-    save();
-
-    return i.reply({ content: '✅ Convocatória de esquadrão criada com sucesso!', flags: EPHEMERAL });
   },
 
   async onButton(client, i) {
@@ -97,7 +117,7 @@ module.exports = {
         const tempChan = await guild.channels.create({
           name: `🚁 Esq. - ${s.jogo}`,
           type: 2,
-          parent: state.channels?.voiceCategory || null,
+          parent: i.channel.parentId || null,
         });
         
         for (const memberId of s.entries) {
@@ -123,16 +143,16 @@ module.exports = {
     if (action === 'join') {
       if (s.entries.length < s.vagas) {
         s.entries.push(userId);
-        i.reply({ content: '📥 Você entrou nas **vagas principais** do esquadrão!', flags: EPHEMERAL });
+        await i.reply({ content: '📥 Você entrou nas **vagas principais** do esquadrão!', flags: EPHEMERAL });
       } else {
         s.suplentes.push(userId);
-        i.reply({ content: '🔄 Vagas principais esgotadas! Você entrou como **suplente (reserva)**.', flags: EPHEMERAL });
+        await i.reply({ content: '🔄 Vagas principais esgotadas! Você entrou como **suplente (reserva)**.', flags: EPHEMERAL });
       }
     } else if (action === 'sub') {
       s.suplentes.push(userId);
-      i.reply({ content: '🔄 Você entrou na lista de **suplentes**.', flags: EPHEMERAL });
+      await i.reply({ content: '🔄 Você entrou na lista de **suplentes**.', flags: EPHEMERAL });
     } else if (action === 'leave') {
-      i.reply({ content: '📤 Você saiu do esquadrão.', flags: EPHEMERAL });
+      await i.reply({ content: '📤 Você saiu do esquadrão.', flags: EPHEMERAL });
     }
 
     if (s.entries.length < s.vagas && s.suplentes.length > 0) {
