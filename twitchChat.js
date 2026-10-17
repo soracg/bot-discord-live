@@ -84,7 +84,7 @@ class TwitchChatBot {
     this.chatUsername = null;
     this.chatUserId = null;
     this.broadcasterId = null;
-    this.channelLogin = String(env.TWITCH_LOGIN || '').trim().replace(/^@/, '').toLowerCase();
+    this.channelLogin = String(env.TWITCH_LOGIN || 'soracg26').trim().replace(/^@/, '').toLowerCase();
     this.isLive = false;
     this.chatLines = 0;
     this.timerMessageIndex = 0;
@@ -252,6 +252,7 @@ class TwitchChatBot {
         ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
         ws.send(`PASS oauth:${cleanToken}`);
         ws.send(`NICK ${this.chatUsername}`);
+        ws.send(`JOIN #${this.channelLogin}`);
       });
       ws.on('message', (chunk) => this.handleRaw(chunk.toString()));
       ws.on('error', () => {});
@@ -285,8 +286,7 @@ class TwitchChatBot {
         this.sendRaw(line.replace(/^PING/, 'PONG'));
         continue;
       }
-      if (line.includes(' 001 ')) {
-        this.sendRaw(`JOIN #${this.channelLogin}`);
+      if (line.includes(' 001 ') || line.includes(' JOIN #')) {
         this.connected = true;
         console.log(`[twitch-chat] conectado e pronto no chat #${this.channelLogin}`);
         continue;
@@ -318,7 +318,8 @@ class TwitchChatBot {
 
   sendChat(message) {
     if (!this.connected || !message) return false;
-    const safe = String(message).replace(/[\r\n]/g, ' ').slice(0, 490);
+    // Adiciona caractere invisível para a Twitch nunca bloquear a resposta por duplicidade
+    const safe = String(message).replace(/[\r\n]/g, ' ').slice(0, 480) + ' \u200B';
     this.outboundQueue.push(safe);
     this.flushOutboundQueue();
     return true;
@@ -351,7 +352,7 @@ class TwitchChatBot {
   }
 
   async handleChatMessage(login, message, tags) {
-    if (login === this.chatUsername) return;
+    // Permite responder aos próprios comandos quando enviados pelo streamer
     const trusted = this.isModerator(tags, login);
     if (!trusted) {
       const violation = detectViolation(message);
@@ -367,7 +368,7 @@ class TwitchChatBot {
     const now = Date.now();
     const userId = tags['user-id'] || login;
     const last = this.lastCommandByUser.get(userId) || 0;
-    if (now - last < 2000) return;
+    if (now - last < 1500) return;
     this.lastCommandByUser.set(userId, now);
 
     const displayName = tags['display-name'] || login;
