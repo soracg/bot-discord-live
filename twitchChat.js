@@ -1,19 +1,3 @@
-<ElicitationsGroup>
-
-Analisando o log de inicialização e a estrutura de rede do IRC da Twitch, há uma instrução de protocolo que estava faltando após a autenticação WebSocket: o envio do comando `JOIN #${this.channelLogin}` antes de confirmar que a sala está pronta, além dos logs de verificação de mensagens.
-
-Sem receber as **capabilities de chat** completas da Twitch, a conexão recebe mensagens do chat com prefixos diferentes ou bloqueia o envio (`PRIVMSG`).
-
----
-
-### Diagnóstico e Solução Definitiva para o `twitchChat.js`
-
-Abaixo está o arquivo **`twitchChat.js`** ajustado com 3 correções vitais:
-1. **Solicitação de Capabilities Imediata**: Envia `CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership` antes do `NICK`.
-2. **Confirmação de Conexão na Sala (`JOIN`)**: Garante a entrada no canal e adiciona logs explícitos no terminal quando uma mensagem ou comando chega (`[twitch-chat] <usuario>: !comando`).
-3. **Log de Mensagens Enviadas**: Exibe no console quando o bot envia a resposta, facilitando o acompanhamento pelo Render.
-
-```javascript
 const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
@@ -123,7 +107,7 @@ class TwitchChatBot {
 
   async start() {
     if (!this.enabled()) {
-      console.log('[twitch-chat] desativado: preencha TWITCH_LOGIN, TWITCH_CLIENT_ID e TWITCH_CLIENT_SECRET, ou defina TWITCH_CHAT_ENABLED=false.');
+      console.log('[twitch-chat] desativado.');
       return;
     }
 
@@ -132,19 +116,19 @@ class TwitchChatBot {
       await this.ensureUserToken();
       const me = await this.helix('/users', {}, true);
       const current = me.data?.[0];
-      if (!current) throw new Error('o token OAuth não identifica uma conta Twitch válida');
+      if (!current) throw new Error('token OAuth inválido');
       this.chatUsername = (env.TWITCH_CHAT_USERNAME || current.login).toLowerCase().replace(/^@/, '');
       this.chatUserId = current.id;
 
       const broadcaster = await this.helix(`/users?login=${encodeURIComponent(this.channelLogin)}`);
       this.broadcasterId = broadcaster.data?.[0]?.id;
-      if (!this.broadcasterId) throw new Error(`não encontrei o canal ${this.channelLogin}; confira TWITCH_LOGIN`);
+      if (!this.broadcasterId) throw new Error(`canal ${this.channelLogin} não encontrado`);
 
       console.log(`[twitch-chat] autenticação pronta como ${this.chatUsername}; canal #${this.channelLogin}`);
       this.connect();
-      this.livePollTimer = setInterval(() => this.updateLiveStatus().catch((e) => console.warn('[twitch-chat] status da live:', e.message)), 60_000);
-      this.messageTimer = setInterval(() => this.maybeSendTimer().catch((e) => console.warn('[twitch-chat] timer:', e.message)), 30_000);
-      this.updateLiveStatus().catch((e) => console.warn('[twitch-chat] status inicial:', e.message));
+      this.livePollTimer = setInterval(() => this.updateLiveStatus().catch(() => {}), 60_000);
+      this.messageTimer = setInterval(() => this.maybeSendTimer().catch(() => {}), 30_000);
+      this.updateLiveStatus().catch(() => {});
     } catch (error) {
       console.error('[twitch-chat] inicialização falhou:', error.message);
       this.scheduleInitializationRetry();
@@ -155,7 +139,7 @@ class TwitchChatBot {
     if (this.stopped || this.initializationTimer) return;
     this.initializationTimer = setTimeout(() => {
       this.initializationTimer = null;
-      this.start().catch((e) => console.error('[twitch-chat] nova tentativa falhou:', e.message));
+      this.start().catch(() => {});
     }, 60_000);
   }
 
@@ -170,7 +154,7 @@ class TwitchChatBot {
       : (this.accessToken ? Date.now() + 3 * 60 * 60 * 1000 : 0);
 
     if (!this.accessToken && !this.refreshToken) {
-      throw new Error(`não há token de chat.`);
+      throw new Error('sem token de chat.');
     }
   }
 
@@ -194,7 +178,7 @@ class TwitchChatBot {
     if (this.accessToken && this.tokenExpiresAt > Date.now() + 5 * 60_000) return this.accessToken;
     if (!this.refreshToken) {
       if (this.accessToken && this.tokenExpiresAt > Date.now()) return this.accessToken;
-      throw new Error('token de usuário expirado;');
+      throw new Error('token de usuário expirado');
     }
     const response = await fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
@@ -208,7 +192,7 @@ class TwitchChatBot {
       signal: AbortSignal.timeout(10_000),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.access_token) throw new Error(`renovação OAuth falhou (HTTP ${response.status})`);
+    if (!response.ok || !result.access_token) throw new Error(`renovação OAuth falhou`);
     this.saveAuth(result);
     return this.accessToken;
   }
@@ -226,7 +210,7 @@ class TwitchChatBot {
       signal: AbortSignal.timeout(10_000),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.access_token) throw new Error(`token de aplicação falhou (HTTP ${response.status})`);
+    if (!response.ok || !result.access_token) throw new Error(`token app falhou`);
     this.appToken = result.access_token;
     this.appTokenExpiresAt = Date.now() + Number(result.expires_in || 3600) * 1000;
     return this.appToken;
@@ -250,10 +234,7 @@ class TwitchChatBot {
       return this.helix(endpoint, query, userToken, method, true);
     }
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = body.message ? `: ${body.message}` : '';
-      throw new Error(`Twitch API HTTP ${response.status}${detail}`);
-    }
+    if (!response.ok) throw new Error(`Twitch API HTTP ${response.status}`);
     return body;
   }
 
@@ -273,15 +254,14 @@ class TwitchChatBot {
         ws.send(`NICK ${this.chatUsername}`);
       });
       ws.on('message', (chunk) => this.handleRaw(chunk.toString()));
-      ws.on('error', (e) => console.warn('[twitch-chat] WebSocket:', e.message));
+      ws.on('error', () => {});
       ws.on('close', () => {
         this.connected = false;
         this.connecting = false;
         if (!this.stopped) this.scheduleReconnect();
       });
-    }).catch((error) => {
+    }).catch(() => {
       this.connecting = false;
-      console.error('[twitch-chat] conexão falhou:', error.message);
       this.scheduleReconnect();
     });
   }
@@ -325,11 +305,9 @@ class TwitchChatBot {
           if (match) {
             const login = match[1].toLowerCase();
             const message = match[2];
-            this.handleChatMessage(login, message, tags).catch((e) => console.warn('[twitch-chat] mensagem:', e.message));
+            this.handleChatMessage(login, message, tags).catch(() => {});
           }
-        } catch (e) {
-          console.warn('[twitch-chat] erro no parse:', e.message);
-        }
+        } catch (e) {}
       }
     }
   }
@@ -445,9 +423,7 @@ class TwitchChatBot {
       broadcaster_id: this.broadcasterId,
       moderator_id: this.chatUserId,
       message_id: messageId,
-    }, true, 'DELETE').catch((error) => {
-      console.warn(`[twitch-chat] não foi possível apagar mensagem de @${login} (${reason}): ${error.message}`);
-    });
+    }, true, 'DELETE').catch(() => {});
   }
 
   async updateLiveStatus() {
@@ -485,16 +461,14 @@ class TwitchChatBot {
       const profile = await this.helix('/users', { login });
       const user = profile.data?.[0];
       if (!user) {
-        this.sendChat('Não encontrei esse canal. Confira o nome e tente novamente.');
+        this.sendChat('Não encontrei esse canal.');
         return;
       }
       const streamData = await this.helix('/streams', { user_id: user.id });
       const stream = streamData.data?.[0];
       const detail = stream?.type === 'live' && stream.game_name ? ` | Ao vivo: ${stream.game_name}` : '';
       this.sendChat(`🚨 Cola na live de ${user.display_name}! Segue lá: https://twitch.tv/${user.login}${detail}`);
-    } catch (error) {
-      console.warn('[twitch-chat] !so:', error.message);
-    }
+    } catch (error) {}
   }
 
   stop() {
@@ -513,7 +487,7 @@ let instance = null;
 function start() {
   if (instance) return instance;
   instance = new TwitchChatBot();
-  instance.start().catch((e) => console.error('[twitch-chat] erro não tratado:', e.message));
+  instance.start().catch(() => {});
   return instance;
 }
 
