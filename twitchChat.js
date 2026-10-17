@@ -1,8 +1,3 @@
-<ElicitationsGroup>
-
-Aqui está o seu **`twitchChat.js`** atualizado e otimizado com os timers exatos das imagens (Discord, lurk e melhores momentos)[cite: 4, 5, 6] e os comandos configurados perfeitamente (`!discord`, `!redes`, `!lurk`, `!jogo`)[cite: 7, 8, 9, 10]:
-
-```javascript
 const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
@@ -31,7 +26,7 @@ const TIMER_MESSAGES = [
 
 const MODERATION_PATTERNS = [
   { name: 'venda/compra de viewers', re: /\b(?:vendo|vender|compro|comprar|compra|venda|vendendo)\s+(?:os?\s+)?(?:viewers?|views?|visualizacoes|seguidores|followers?|inscritos)\b/i },
-  { name: 'viewbot', re: /\b(?:view\s*bot|viewbot|bot\s+de\s+(?:viewers?|views?)|bots?\s+de\s+visualizacoes)\b/i },
+  { name: 'viewbot', re: /\b(?:view\s*bot|viewbot|bot\s+de\s+(?:viewers?|views?|visualizacoes|seguidores|followers?|inscritos))\b/i },
   { name: 'serviço de viewers', re: /\b(?:viewers?|views?|visualizacoes|seguidores|followers?|inscritos)\s+(?:baratos?|pagos?|reais?|instantaneos?|a\s+venda|por\s+atacado)\b/i },
   { name: 'impulsionamento artificial', re: /\b(?:boost|aumentar|aumento|subir|ganhar)\s+(?:os?\s+)?(?:viewers?|views?|seguidores|followers?|inscritos)\b/i },
   { name: 'venda de viewers em inglês', re: /\b(?:buy|buying|sell|selling|cheap|paid|instant|free)\b.{0,45}\b(?:viewers?|views?|followers?|viewbot)\b/i },
