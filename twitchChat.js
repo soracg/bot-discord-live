@@ -305,13 +305,25 @@ class TwitchChatBot {
         console.log(`[twitch-chat] conectado ao chat #${this.channelLogin}`);
         continue;
       }
-      if (line.startsWith('@')) {
-        const space = line.indexOf(' ');
-        if (space < 0) continue;
-        const tags = parseTags(line.slice(1, space));
-        const rest = line.slice(space + 1);
-        const match = rest.match(/^:([^!]+)!\S+ PRIVMSG #\S+ :(.*)$/);
-        if (match) this.handleChatMessage(match[1].toLowerCase(), match[2], tags).catch((e) => console.warn('[twitch-chat] mensagem:', e.message));
+
+      if (line.includes(' PRIVMSG ')) {
+        try {
+          let tags = {};
+          let rest = line;
+          if (line.startsWith('@')) {
+            const space = line.indexOf(' ');
+            tags = parseTags(line.slice(1, space));
+            rest = line.slice(space + 1);
+          }
+          const match = rest.match(/^:([^!]+)!\S+ PRIVMSG #\S+ :(.*)$/);
+          if (match) {
+            const login = match[1].toLowerCase();
+            const message = match[2];
+            this.handleChatMessage(login, message, tags).catch((e) => console.warn('[twitch-chat] mensagem:', e.message));
+          }
+        } catch (e) {
+          console.warn('[twitch-chat] erro no parse:', e.message);
+        }
       }
     }
   }
