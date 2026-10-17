@@ -1,3 +1,8 @@
+<ElicitationsGroup>
+
+Aqui está o seu **`twitchChat.js`** atualizado e otimizado com os timers exatos das imagens (Discord, lurk e melhores momentos)[cite: 4, 5, 6] e os comandos configurados perfeitamente (`!discord`, `!redes`, `!lurk`, `!jogo`)[cite: 7, 8, 9, 10]:
+
+```javascript
 const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
@@ -20,8 +25,8 @@ const CHAT_LINKS = {
 
 const TIMER_MESSAGES = [
   `🔥 Quer receber avisos das lives e trocar ideia com a comunidade? Chega no Discord: ${CHAT_LINKS.discord}`,
-  '🌙 Vai ficar no lurk? Valeu por fortalecer a live! Dica: você pode silenciar a aba do navegador sem mutar o player. Fica à vontade e aproveita a gameplay! 🚀',
-  `🎬 Os melhores momentos também vão para o YouTube e TikTok! Me encontra como @${defaultHandle}. YouTube: ${CHAT_LINKS.youtube} | TikTok: ${CHAT_LINKS.tiktok}`,
+  '📢 Dica de suporte: Vai dar aquele lurk? Mute o som clicando com o botão direito na aba do navegador. Evite mutar o player para que sua presença ajude na nossa meta de viewers! 🚀',
+  `🎬 Os melhores momentos também vão para o YouTube e TikTok! Me encontra como @${defaultHandle}.`,
 ];
 
 const MODERATION_PATTERNS = [
@@ -330,7 +335,7 @@ class TwitchChatBot {
 
   flushOutboundQueue() {
     if (this.outboundTimer || !this.connected || !this.outboundQueue.length) return;
-    const minimumGapMs = 1600; // limita as respostas para evitar exceder o limite de chat da Twitch
+    const minimumGapMs = 1600;
     const delay = Math.max(0, minimumGapMs - (Date.now() - this.lastOutboundAt));
     this.outboundTimer = setTimeout(() => {
       this.outboundTimer = null;
@@ -373,12 +378,14 @@ class TwitchChatBot {
     if (now - last < 2500) return;
     this.lastCommandByUser.set(userId, now);
 
+    const displayName = tags['display-name'] || login;
     const [command, ...args] = trimmed.split(/\s+/);
     switch (command.toLowerCase()) {
       case '!discord':
-        this.sendChat(`🔥 Cola no Discord da comunidade para receber avisos das lives e trocar ideia com a tropa: ${CHAT_LINKS.discord}`);
+        this.sendChat(`🔥 Cola no Discord da comunidade para receber avisos das lives, trocar ideia com a tropa e ficar por dentro de tudo! ${CHAT_LINKS.discord}`);
         break;
       case '!redes':
+      case '!links':
         this.sendChat(`🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | TikTok: ${CHAT_LINKS.tiktok} | Discord: ${CHAT_LINKS.discord}`);
         break;
       case '!youtube':
@@ -392,16 +399,17 @@ class TwitchChatBot {
         else this.sendChat(`⏱️ Estamos ao vivo há ${this.formatUptime(Date.now() - this.liveStartedAt)}!`);
         break;
       case '!jogo':
-        this.sendChat(this.isLive ? `🎮 Jogo atual: ${this.currentGame || 'categoria não informada'}.` : '🎮 Não estou ao vivo na Twitch no momento.');
+      case '!game':
+        this.sendChat(this.isLive ? `🎮 Jogo atual da live: ${this.currentGame || 'categoria não informada'}.` : '🎮 Não estou ao vivo na Twitch no momento.');
         break;
       case '!pc':
         this.sendChat('💻 Setup: Ryzen 5 5600 | RTX 3060 12 GB | 32 GB RAM | monitor AOC 144 Hz.');
         break;
       case '!lurk':
-        this.sendChat(`🌙 @${login} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
+        this.sendChat(`🌙 ${displayName} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
         break;
       case '!comandos':
-        this.sendChat('🤖 Comandos: !discord | !redes | !youtube | !tiktok | !uptime | !jogo | !pc | !lurk | !so @canal (mods)');
+        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
         break;
       case '!so':
         if (trusted) await this.shoutout(args[0], userId);
