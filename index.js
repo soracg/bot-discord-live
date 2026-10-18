@@ -38,8 +38,14 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
   ],
 });
+
+// Expõe a instância do client do Discord globalmente para o módulo twitchChat consumir
+global.discordClient = client;
+
+const LIVE_CHAT_CHANNEL_ID = '1558245625760583760';
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const NO_PING = { parse: [] };
@@ -115,7 +121,8 @@ client.once(Events.ClientReady, async (c) => {
   await backup.restoreIfFresh(c);
 
   notifier.start(c);
-  twitchChat.start();
+  const twitchInstance = twitchChat.start();
+  global.twitchBotInstance = twitchInstance;
   sorteio.start(c);
   backup.start(c);
 
@@ -126,9 +133,27 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
   voiceRooms.handleVoiceState(oldState, newState).catch((e) => console.warn('[voice-rooms]', e.message));
 });
 
-client.on(Events.MessageCreate, (msg) => {
+client.on(Events.MessageCreate, async (msg) => {
   if (msg.guildId !== GUILD_ID) return;
+
+  // 1. Ganho de XP
   xp.onMessage(msg, notifier.isLive()).catch((e) => console.warn('[xp]', e.message));
+
+  // 2. Transmissão do Discord (#live-chat) -> Twitch
+  if (msg.channel.id === LIVE_CHAT_CHANNEL_ID && !msg.author.bot) {
+    const isMod = msg.member && (msg.member.permissions.has(PermissionFlagsBits.ManageMessages) || msg.member.permissions.has(PermissionFlagsBits.Administrator));
+    if (isMod) {
+      const modName = msg.member.displayName || msg.author.username;
+      const textToSend = `MOD (${modName}): ${msg.content}`;
+      
+      if (global.twitchBotInstance && global.twitchBotInstance.connected) {
+        const sent = global.twitchBotInstance.sendChat(textToSend);
+        if (sent) {
+          await msg.react('📡').catch(() => {});
+        }
+      }
+    }
+  }
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {

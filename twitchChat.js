@@ -318,7 +318,6 @@ class TwitchChatBot {
 
   sendChat(message) {
     if (!this.connected || !message) return false;
-    // Adiciona caractere invisível para a Twitch nunca bloquear a resposta por duplicidade
     const safe = String(message).replace(/[\r\n]/g, ' ').slice(0, 480) + ' \u200B';
     this.outboundQueue.push(safe);
     this.flushOutboundQueue();
@@ -352,8 +351,22 @@ class TwitchChatBot {
   }
 
   async handleChatMessage(login, message, tags) {
-    // Permite responder aos próprios comandos quando enviados pelo streamer
     const trusted = this.isModerator(tags, login);
+
+    // Espelha a mensagem da Twitch no canal #log-chat-live do Discord (ID: 1558258121791504534)
+    try {
+      const discordClient = global.discordClient;
+      if (discordClient) {
+        const logChannel = await discordClient.channels.fetch('1558258121791504534').catch(() => null);
+        if (logChannel) {
+          const displayName = tags['display-name'] || login;
+          await logChannel.send(`💬 **[Twitch] ${displayName}**: ${message}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[twitch-chat] Erro ao espelhar mensagem no Discord:', e.message);
+    }
+
     if (!trusted) {
       const violation = detectViolation(message);
       if (violation && tags.id) {
