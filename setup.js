@@ -223,7 +223,6 @@ function rolesPayload() {
 function linksPayload() {
   const defs = [
     { key: 'youtube', label: 'YouTube', emoji: '▶️' },
-    { key: 'kick', label: 'Kick', emoji: '🟢' },
     { key: 'twitch', label: 'Twitch', emoji: '🟣' },
   ].filter((d) => cfg.links[d.key]);
 
@@ -294,6 +293,39 @@ function rankingPayload() {
             '💡 *Consulte suas estatísticas atuais utilizando os comandos `/rank` e `/top` no canal apropriado.*',
           ].join('\n')
         ),
+    ],
+  };
+}
+
+function honeypotPayload() {
+  return {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xff3838)
+        .setImage(cfg.brand.banner || BANNER_URL)
+        .setTitle('🚨 ZONA DE SEGURANÇA / CANAL RESTRITO')
+        .setDescription(
+          [
+            '**ATENÇÃO! ESTE CANAL É UMA ARMADILHA AUTOMÁTICA (HONEYPOT).**',
+            '',
+            '📌 **O QUE É ESTE CANAL?**',
+            'Este canal foi criado exclusivamente para a **proteção da nossa comunidade** contra *spambots*, *malwares* e **contas hackeadas**.',
+            '',
+            '⚠️ **COMO FUNCIONA?**',
+            '• **NENHUM MEMBRO HUMANO DEVE DIGITAR NESTE CANAL.**',
+            '• Qualquer mensagem enviada aqui acionará o **sistema de defesa do servidor**.',
+            '• Enviar uma mensagem resultará em **timeout/castigo automático de 7 dias**.',
+            '',
+            '💡 **POR QUE ISSO EXISTE?**',
+            'Quando uma conta do Discord é comprometida por vírus, robôs automáticos enviam links maliciosos no primeiro canal visível da lista.',
+            'Com esta armadilha, o bot **isola a conta afetada instantaneamente**, protegendo todos os outros membros de golpes.',
+            '',
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            '',
+            '👉 *Se você é um membro humano, ignore este canal e utilize os demais canais da base!*',
+          ].join('\n')
+        )
+        .setFooter({ text: `${cfg.brand.name} • Sistema de Proteção Anti-Bot` }),
     ],
   };
 }
@@ -389,6 +421,7 @@ async function runSetup(guild, report = async () => {}) {
   await upsertMessage(guild, 'links', 'links', linksPayload());
   await upsertMessage(guild, 'agenda', 'agenda', agendaPayload());
   await upsertMessage(guild, 'ranking', 'ranking', rankingPayload());
+  await upsertMessage(guild, 'honeypot', 'honeypot', honeypotPayload());
 
   await say('⏳ Dando a patente inicial aos membros…');
   await seedRecruits(guild);
@@ -397,4 +430,4 @@ async function runSetup(guild, report = async () => {}) {
   return { roles, channels };
 }
 
-module.exports = { runSetup, upsertMessage, agendaPayload };
+module.exports = { runSetup, upsertMessage, agendaPayload, honeypotPayload };

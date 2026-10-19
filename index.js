@@ -11,6 +11,7 @@ const {
   ActionRowBuilder,
   EmbedBuilder,
   MessageFlags,
+  ChannelType,
 } = require('discord.js');
 const cfg = require('./config');
 const squad = require('./squad');
@@ -46,6 +47,8 @@ const client = new Client({
 global.discordClient = client;
 
 const LIVE_CHAT_CHANNEL_ID = '1558245625760583760';
+const HONEYPOT_CHANNEL_ID = '1561805357339377804';
+const TICKET_CHANNEL_ID = '1558749685555142717';
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const NO_PING = { parse: [] };
@@ -134,13 +137,51 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 });
 
 client.on(Events.MessageCreate, async (msg) => {
-  if (msg.guildId !== GUILD_ID) return;
+  if (msg.guildId !== GUILD_ID || msg.author.bot) return;
 
-  // 1. Ganho de XP
+  // 1. SISTEMA DE HONEYPOT (ARMADILHA PARA BOTS/CONTAS COMPROMETIDAS)
+  if (msg.channel.id === HONEYPOT_CHANNEL_ID) {
+    try {
+      await msg.delete().catch(() => {});
+
+      const member = msg.member || (await msg.guild.members.fetch(msg.author.id).catch(() => null));
+      if (member) {
+        const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+        await member.timeout(sevenDaysMs, 'Honeypot acionado: envio de mensagem em canal restrito.');
+
+        const embedDm = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('⚠️ PUNIÇÃO DE SEGURANÇA APLICADA')
+          .setDescription(
+            [
+              `Fala, **${member.displayName}**! Você recebeu um **timeout de 7 dias** no servidor **${msg.guild.name}**.`,
+              '',
+              '🔍 **Motivo:** Sua conta enviou uma mensagem em um canal armadilha (*honeypot*). Isso acontece geralmente quando a conta foi comprometida por spambots ou malwares sem seu conhecimento.',
+              '',
+              '🛡️ **Como reverter e desbanir:**',
+              '1. Altere sua senha do Discord imediatamente e ative o 2FA (autenticação em duas etapas).',
+              '2. Verifique e remova aplicativos autorizados suspeitos em suas configurações.',
+              `3. Abra um ticket no canal <#${TICKET_CHANNEL_ID}> para solicitar o desbloqueio da sua conta.`,
+            ].join('\n')
+          )
+          .setFooter({ text: `${cfg.brand.name} • Segurança Automática` })
+          .setTimestamp();
+
+        await member.send({ embeds: [embedDm] }).catch(() => {
+          console.log(`[honeypot] DMs fechadas para ${member.user.tag}.`);
+        });
+      }
+    } catch (err) {
+      console.error('[honeypot] Erro ao aplicar punição:', err);
+    }
+    return;
+  }
+
+  // 2. Ganho de XP
   xp.onMessage(msg, notifier.isLive()).catch((e) => console.warn('[xp]', e.message));
 
-  // 2. Transmissão do Discord (#live-chat) -> Twitch
-  if (msg.channel.id === LIVE_CHAT_CHANNEL_ID && !msg.author.bot) {
+  // 3. Transmissão do Discord (#live-chat) -> Twitch
+  if (msg.channel.id === LIVE_CHAT_CHANNEL_ID) {
     const isMod = msg.member && (msg.member.permissions.has(PermissionFlagsBits.ManageMessages) || msg.member.permissions.has(PermissionFlagsBits.Administrator));
     if (isMod) {
       const modName = msg.member.displayName || msg.author.username;
@@ -276,6 +317,50 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     if (i.isButton()) {
+      // TRATAMENTO DO BOTÃO DE TICKET
+      if (i.customId.startsWith('ticket:') || i.customId.includes('ticket')) {
+        await i.deferReply({ flags: EPHEMERAL });
+        try {
+          const existingChannel = i.guild.channels.cache.find(
+            (c) => c.name === `ticket-${i.user.username.toLowerCase()}`
+          );
+          if (existingChannel) {
+            return i.editReply({ content: `Você já possui um ticket aberto: ${existingChannel}` });
+          }
+
+          const ticketChannel = await i.guild.channels.create({
+            name: `ticket-${i.user.username}`,
+            type: ChannelType.GuildText,
+            parent: state.channels.ticketsCategory || TICKET_CHANNEL_ID,
+            permissionOverwrites: [
+              {
+                id: i.guild.id,
+                deny: [PermissionFlagsBits.ViewChannel],
+              },
+              {
+                id: i.user.id,
+                allow: [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.SendMessages,
+                  PermissionFlagsBits.ReadMessageHistory,
+                ],
+              },
+            ],
+          });
+
+          const embedTicket = new EmbedBuilder()
+            .setColor(cfg.brand.color || 0x2b2d31)
+            .setTitle('📩 Suporte Central')
+            .setDescription(`Olá, ${i.user}! Descreva abaixo sua dúvida ou solicitação de suporte. A equipe de moderação atenderá em breve.`);
+
+          await ticketChannel.send({ embeds: [embedTicket] });
+          return i.editReply({ content: `✅ Ticket criado com sucesso: ${ticketChannel}` });
+        } catch (err) {
+          console.error('[ticket]', err);
+          return i.editReply({ content: '❌ Não foi possível criar o ticket. Verifique as permissões do bot.' });
+        }
+      }
+
       if (i.customId.startsWith('loja:')) {
         return loja.onButton(client, i);
       }
