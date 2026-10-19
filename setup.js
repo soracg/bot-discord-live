@@ -12,6 +12,7 @@ const { state, save, flush } = require('./store');
 const NO_PING = { parse: [] };
 const REASON = 'Setup automático do bot';
 const BANNER_URL = 'https://i.imgur.com/TxsOxfe.jpeg';
+const HONEYPOT_CHANNEL_ID = '1561805357339377804';
 
 // ───────────────────────── Cargos ─────────────────────────
 
@@ -317,7 +318,7 @@ function honeypotPayload() {
             '• Enviar uma mensagem resultará em **timeout/castigo automático de 7 dias**.',
             '',
             '💡 **POR QUE ISSO EXISTE?**',
-            'Quando uma conta do Discord é comprometida por vírus, robôs automáticos enviam links maliciosos no primeiro canal visível da lista.',
+            'Quando uma conta do Discord é compromised por vírus, robôs automáticos enviam links maliciosos no primeiro canal visível da lista.',
             'Com esta armadilha, o bot **isola a conta afetada instantaneamente**, protegendo todos os outros membros de golpes.',
             '',
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -332,7 +333,7 @@ function honeypotPayload() {
 
 /** Cria a mensagem fixa ou edita a que já existe. */
 async function upsertMessage(guild, channelKey, msgKey, payload) {
-  const chId = state.channels[channelKey];
+  const chId = channelKey === 'honeypot' ? HONEYPOT_CHANNEL_ID : state.channels[channelKey];
   const channel = chId && (await guild.channels.fetch(chId).catch(() => null));
   if (!channel || !channel.isTextBased()) return null;
 
