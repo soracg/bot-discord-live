@@ -420,7 +420,7 @@ class TwitchChatBot {
         this.sendChat(`🌙 ${displayName} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
         break;
       case '!comandos':
-        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
+        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !alerta | !clip | !fumaca | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
         break;
       case '!so':
         if (trusted) await this.shoutout(args[0], userId);
