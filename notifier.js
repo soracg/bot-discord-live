@@ -231,6 +231,7 @@ async function handleLive(client, liveList) {
   state.live = { messageId: msg.id, channelId: channel.id, startedAt, sig, miss: 0, title };
   save();
   console.log(`[notifier] live no ar (${sig})`);
+  if (!prev && typeof global.onLiveStart === 'function') { try { global.onLiveStart(); } catch (e) {} } // zera o MVP da live
   if (!prev) instagram.postLiveStory({ game: liveList.find((l) => l.game)?.game }); // só quando a live começa
 }
 

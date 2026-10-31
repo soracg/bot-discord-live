@@ -412,8 +412,10 @@ function hubEvent(ev) {
   ev.ts = ev.ts || Date.now();
   console.log(`[evento] ${ev.type} - ${ev.name || ''}${ev.amount ? ' (' + ev.amount + ')' : ''}`);
   broadcast({ type: 'event', ev });
-  addMission(hubCfg.mission.count[ev.type] || 0);
-  hubXpEvent(ev);
+  if (!ev.test) {                                  // /test so aparece na tela: nao suja ranking/missao
+    addMission(hubCfg.mission.count[ev.type] || 0);
+    hubXpEvent(ev);
+  }
 }
 
 function slNormalize(m) {
@@ -468,6 +470,12 @@ const RANK_FILE = path.join(DATA_DIR, 'ranks.json');
 const users = (readJson(RANK_FILE, {}).users) || {};
 const sessionXp = {};
 const lastXp = {}, lastCard = {};
+function resetSession() {      // MVP e por live: zera o XP da sessao (o ranking geral continua)
+  Object.keys(sessionXp).forEach(k => delete sessionXp[k]);
+  scheduleRanking();
+  console.log('[mvp] MVP zerado (nova live)');
+}
+global.onLiveStart = resetSession;   // o notifier chama quando a live comeca
 
 const rankOf = xp => { let r = RANKS[0]; for (const x of RANKS) if (xp >= x.xp) r = x; return r; };
 const nextRank = xp => RANKS.find(x => x.xp > xp) || null;
@@ -600,6 +608,7 @@ function hubChat(msg, plain) {
     else if (c === '!votar') castVote(key, rest[0]);
     else if (mod && c === '!votacao') startPollFromChat(arg);
     else if (mod && c === '!fimvotacao') endPoll();
+    else if (mod && c === '!resetmvp') resetSession();
     else if (HUB_CMDS[c]) runCommand(c, HUB_CMDS[c], msg);
     return;
   }
@@ -801,7 +810,7 @@ function hubHttp(req, res) {
       bits: { amount: '500' }, donation: { amount: 'R$ 10,00' }
     };
     const types = q.type === 'all' || !q.type ? Object.keys(sample) : [q.type];
-    types.forEach((t, i) => setTimeout(() => hubEvent({ type: t, name: q.name || 'Soldado Teste', platform: 'twitch', ...sample[t], ...(q.amount ? { amount: q.amount } : {}) }), i * 900));
+    types.forEach((t, i) => setTimeout(() => hubEvent({ type: t, name: q.name || 'Soldado Teste', platform: 'twitch', test: q.real !== '1', ...sample[t], ...(q.amount ? { amount: q.amount } : {}) }), i * 900));
     return out({ ok: true, enviados: types });
   }
   if (p === '/api/mission/add') { addMission(Number(q.n) || 1); return out(missionView()); }
@@ -820,7 +829,15 @@ function hubHttp(req, res) {
   if (p === '/api/xp/give') { giveXp(q.platform || 'twitch', q.name || 'Teste', Number(q.xp) || 0); return out(rankingView()); }
   if (p === '/api/poll/start') { const ok = startPoll(q.q, String(q.opts || '').split('|'), Math.min(600, Math.max(10, Number(q.secs) || 60))); return out({ ok }); }
   if (p === '/api/poll/end') { endPoll(); return out({ ok: true }); }
-  if (p === '/api/session/reset') { Object.keys(sessionXp).forEach(k => delete sessionXp[k]); scheduleRanking(); return out({ ok: true }); }
+  if (p === '/api/session/reset') { resetSession(); return out({ ok: true }); }
+  if (p === '/api/ranking/remove') {   // remove um viewer do ranking pelo nome (ex.: usuario de teste)
+    const n = String(q.name || '').toLowerCase(); let c = 0;
+    for (const k of Object.keys(users)) if (String(users[k].name).toLowerCase() === n) { delete users[k]; delete sessionXp[k]; c++; }
+    scheduleSave(); scheduleRanking(); return out({ removidos: c });
+  }
+  if (p === '/api/ranking/reset') {    // apaga TODO o ranking e o MVP
+    Object.keys(users).forEach(k => delete users[k]); resetSession(); scheduleSave(); return out({ ok: true });
+  }
   if (p === '/api/fx') { broadcast({ type: 'fx', fx: q.name || 'explosao', by: q.by || 'Teste' }); return out({ ok: true }); }
   if (p === '/api/obs/status') return out({ conectado: obsReady, url: hubCfg.obs.url });
   if (p === '/api/replay/test') {
