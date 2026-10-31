@@ -98,7 +98,7 @@
     let isSimulating = false;
     let ws = null;
 
-    // Conecta ao WebSocket unificado do servidor na mesma porta principal (Render / localhost)
+    // Conecta ao WebSocket unificado do servidor na mesma porta principal
     function connectWebSocket() {
         const wsStatus = document.getElementById('ws-status');
         try {
@@ -218,6 +218,7 @@
 
     window.dispatchChatMessage = function(text) {
         if (!text) return;
+        // Envia a mensagem através do WebSocket unificado ativo
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'send_chat', message: text }));
         }
@@ -276,5 +277,5 @@
     connectWebSocket();
 
     // Mensagem inicial de boas-vindas
-    addMessage('ModBot', '#EF4444', 'BOT', 'Painel pronto e integrado ao Render na porta principal!');
+    addMessage('ModBot', '#EF4444', 'BOT', 'Painel pronto e conectado ao Render!');
 </script>
