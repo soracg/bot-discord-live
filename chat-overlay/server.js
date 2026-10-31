@@ -4,6 +4,34 @@ const path = require('path');
 const WebSocket = require('ws');
 const twitchChatBot = require('./twitchChat_3'); // Importa o bot autenticado da Twitch com suporte a envio via WebSocket
 
+// --- DEPENDÊNCIAS DO DISCORD ---
+require('dotenv').config();
+const {
+  Client,
+  Events,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  EmbedBuilder,
+  MessageFlags,
+  ChannelType,
+} = require('discord.js');
+const cfgDiscord = require('./config');
+const squad = require('./squad');
+const { state, save } = require('./store');
+const { runSetup, upsertMessage, agendaPayload } = require('./setup');
+const notifier = require('./notifier');
+const instagram = require('./instagramStory');
+const xp = require('./xp');
+const voiceRooms = require('./voiceRooms');
+const backup = require('./backup');
+const sorteio = require('./sorteio');
+const loja = require('./loja');
+
 process.on('uncaughtException', e => console.log('[erro]', e && e.message));
 process.on('unhandledRejection', e => console.log('[erro]', e && e.message ? e.message : e));
 const VERSION = 8;
@@ -497,13 +525,13 @@ function scheduleRanking() {
   rankingTimer = setTimeout(() => { rankingTimer = null; broadcast({ type: 'ranking', ranking: rankingView() }); }, 1500);
 }
 
-function giveXp(platform, name, xp) {
-  if (!xp || !name) return;
+function giveXp(platform, name, xpVal) {
+  if (!xpVal || !name) return;
   const k = findUser(platform, name);
   const u = users[k] || (users[k] = { name, platform, xp: 0 });
   const antes = rankOf(u.xp).name;
-  u.xp += xp; u.name = name;
-  sessionXp[k] = (sessionXp[k] || 0) + xp;
+  u.xp += xpVal; u.name = name;
+  sessionXp[k] = (sessionXp[k] || 0) + xpVal;
   const depois = rankOf(u.xp).name;
   if (depois !== antes) {
     console.log(`[rank] ${name} promovido a ${depois}`);
@@ -828,18 +856,6 @@ function hubHttp(req, res) {
   res.writeHead(404); res.end('404'); return true;
 }
 
-function startHubDemo() {
-  const kinds = ['follow', 'follow', 'sub', 'bits', 'donation', 'raid', 'giftsub'];
-  const names = ['MajorTom', 'Ana Clara', 'zeh_sniper', 'Roberto', 'Lia', 'Ferrugem', 'novato77'];
-  const extra = { sub: { months: 3 }, bits: { amount: '200' }, donation: { amount: 'R$ 15,00' }, raid: { amount: '18' }, giftsub: { from: 'Roberto' } };
-  setTimeout(() => startPoll('Qual tática agora?', ['Flanquear', 'Frontal', 'Defender o ponto'], 40), 6000);
-  setInterval(() => { if (poll && poll.active) castVote('demo:' + Math.floor(Math.random() * 30), 1 + Math.floor(Math.random() * 3)); }, 400);
-  const fxs = ['helicoptero', 'explosao', 'fumaca', 'alerta']; let fi = 0;
-  setInterval(() => broadcast({ type: 'fx', fx: fxs[fi++ % fxs.length], by: 'MajorTom' }), 12000);
-  let n = 0;
-  setInterval(() => { const t = kinds[n % kinds.length]; hubEvent({ type: t, name: names[n % names.length], platform: 'twitch', ...extra[t] }); n++; }, 3500);
-}
-
 const PORT = process.env.PORT || cfg.port || 3000;
 server.listen(PORT, () => {
   console.log(`\n  Versao ${VERSION} - pasta: ${__dirname}`);
@@ -862,22 +878,122 @@ server.listen(PORT, () => {
   startObs();
 });
 
-function startDemo() {
-  startHubDemo();
-  setStatus('twitch', true); setStatus('youtube', true); setStatus('kick', true);
-  const T = (t) => [{ t: 'text', v: t }];
-  const samples = [
-    { platform: 'twitch', user: 'MajorTom', color: '#1E90FF', badges: ['mod'], parts: T('bora pilotar esse helicóptero!') },
-    { platform: 'youtube', user: 'Ana Clara', badges: [], parts: T('primeira vez aqui, que overlay bonito 🔥') },
-    { platform: 'twitch', user: 'zeh_sniper', color: '#2a2a2a', badges: ['sub'], parts: T('cuidado com o inimigo na esquerda') },
-    { platform: 'youtube', user: 'Roberto', badges: ['sub'], parts: T('manda salve pro pessoal da Caveiras'), highlight: { kind: 'superchat', label: 'R$ 10,00', color: '#e8b93a' } },
-    { platform: 'twitch', user: 'Lia', color: '#FF4500', badges: ['vip'], parts: T('Cheer100 muito bom'), highlight: { kind: 'bits', label: '100 bits' } },
-    { platform: 'kick', user: 'Ferrugem', color: '#53FC18', badges: ['mod'], parts: T('chat da Kick funcionando 🚁') },
-    { platform: 'twitch', user: 'novato77', color: '#00FF7F', badges: [], parts: T('oi gente, cheguei agora'), highlight: { kind: 'first', label: 'primeira msg' } }
-  ];
-  let n = 0;
-  setInterval(() => {
-    const s = samples[n++ % samples.length];
-    emit({ ...s, id: 'demo-' + n, ts: Date.now() });
-  }, 1800);
+
+// =====================================================================
+//  INICIALIZAÇÃO DO BOT DO DISCORD (Integrado ao mesmo Render)
+// =====================================================================
+const { DISCORD_TOKEN, GUILD_ID } = process.env;
+if (!DISCORD_TOKEN || !GUILD_ID) {
+  console.warn('⚠️ Aviso: Faltou DISCORD_TOKEN ou GUILD_ID no ambiente do Render. O bot do Discord ficará offline.');
+} else {
+  const discordClient = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.MessageContent,
+    ],
+  });
+
+  global.discordClient = discordClient;
+
+  const LIVE_CHAT_CHANNEL_ID = '1558245625760583760';
+  const HONEYPOT_CHANNEL_ID = '1561805357339377804';
+  const TICKET_CHANNEL_ID = '1558749685555142717';
+
+  const EPHEMERAL = MessageFlags.Ephemeral;
+  const NO_PING = { parse: [] };
+
+  const commands = [
+    new SlashCommandBuilder().setName('setup').setDescription('Cria/atualiza cargos, canais e mensagens do servidor').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('squad').setDescription('Cria convocatória').addStringOption(o => o.setName('jogo').setDescription('Jogo').setRequired(true)).addIntegerOption(o => o.setName('vagas').setDescription('Vagas').setRequired(true)).addStringOption(o => o.setName('detalhes').setDescription('Detalhes').setRequired(true)),
+    new SlashCommandBuilder().setName('rank').setDescription('Mostra patente e XP').addUserOption(o => o.setName('membro').setDescription('Membro')),
+    new SlashCommandBuilder().setName('top').setDescription('Top 10 da tropa'),
+    new SlashCommandBuilder().setName('agenda').setDescription('Edita agenda').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('livetest').setDescription('Teste de live').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('storytest').setDescription('Teste story IG').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('loja').setDescription('Loja de XP'),
+    new SlashCommandBuilder().setName('sorteio').setDescription('Sorteios').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+  ].map(c => c.toJSON());
+
+  discordClient.once(Events.ClientReady, async (c) => {
+    console.log(`[discord] Logado com sucesso como ${c.user.tag}`);
+    try {
+      const guild = await c.guilds.fetch(GUILD_ID);
+      await guild.commands.set(commands);
+      await backup.restoreIfFresh(c);
+      notifier.start(c);
+      sorteio.start(c);
+      backup.start(c);
+      await voiceRooms.cleanupEmptyTemporaryChannels(guild);
+    } catch (err) {
+      console.error('[discord] Erro ao sincronizar guilda/comandos:', err.message);
+    }
+  });
+
+  discordClient.on(Events.VoiceStateUpdate, (oldState, newState) => {
+    voiceRooms.handleVoiceState(oldState, newState).catch((e) => console.warn('[voice-rooms]', e.message));
+  });
+
+  discordClient.on(Events.MessageCreate, async (msg) => {
+    if (msg.guildId !== GUILD_ID || msg.author.bot) return;
+
+    if (msg.channel.id === HONEYPOT_CHANNEL_ID) {
+      try {
+        await msg.delete().catch(() => {});
+        const member = msg.member || (await msg.guild.members.fetch(msg.author.id).catch(() => null));
+        if (member) {
+          await member.timeout(7 * 24 * 60 * 60 * 1000, 'Honeypot acionado.');
+        }
+      } catch (err) {
+        console.error('[honeypot]', err);
+      }
+      return;
+    }
+
+    xp.onMessage(msg, notifier.isLive()).catch((e) => console.warn('[xp]', e.message));
+
+    if (msg.channel.id === LIVE_CHAT_CHANNEL_ID) {
+      const isMod = msg.member && (msg.member.permissions.has(PermissionFlagsBits.ManageMessages) || msg.member.permissions.has(PermissionFlagsBits.Administrator));
+      if (isMod && global.twitchBotInstance && global.twitchBotInstance.connected) {
+        const modName = msg.member.displayName || msg.author.username;
+        const sent = global.twitchBotInstance.sendChat(`MOD (${modName}): ${msg.content}`);
+        if (sent) await msg.react('📡').catch(() => {});
+      }
+    }
+  });
+
+  discordClient.on(Events.GuildMemberAdd, async (member) => {
+    if (member.guild.id !== GUILD_ID || member.user.bot) return;
+    await xp.syncPatente(member, 0);
+  });
+
+  discordClient.on(Events.InteractionCreate, async (i) => {
+    try {
+      if (i.guildId !== GUILD_ID) return;
+      if (i.isChatInputCommand()) {
+        switch (i.commandName) {
+          case 'setup':
+            await i.deferReply({ flags: EPHEMERAL });
+            const r = await runSetup(i.guild, (t) => i.editReply(t));
+            return i.editReply(`✅ Pronto! ${r.roles} cargos e ${r.channels} canais configurados.`);
+          case 'squad': return squad.execute(discordClient, i);
+          case 'rank':
+            const user = i.options.getUser('membro') ?? i.user;
+            const member = await i.guild.members.fetch(user.id).catch(() => null);
+            return i.reply({ embeds: [xp.rankEmbed(user, member)], allowedMentions: NO_PING });
+          case 'top': return i.reply({ embeds: [xp.topEmbed()], allowedMentions: NO_PING });
+          case 'loja': return loja.execute(discordClient, i);
+          case 'sorteio': return sorteio.onCommand(discordClient, i);
+        }
+      }
+    } catch (err) {
+      console.error('[interaction]', err);
+    }
+  });
+
+  discordClient.login(DISCORD_TOKEN).catch(err => {
+    console.error('[discord] Erro ao efetuar login:', err.message);
+  });
 }
