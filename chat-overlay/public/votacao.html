@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>votacao</title>
+<style>
+  :root {
+    --ink: #14181a;
+    --sand: #e6dcc0;
+    --olive: #6f8a4e;
+    --olive-dk: #3f5230;
+    --amber: #e8a33a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; color: var(--sand); }
+
+  #card {
+    display: none; width: 520px; padding: 14px 18px 16px; transform-origin: top left;
+    background: linear-gradient(180deg, rgba(20,24,26,.94), rgba(20,24,26,.84));
+    border-top: 4px solid var(--amber);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  }
+  #card.on { display: block; animation: entra .35s cubic-bezier(.2,.9,.25,1) both; }
+  #card.sai { animation: sai .35s ease-in forwards; }
+
+  .q { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .dica { margin-top: 3px; font-size: 16px; opacity: .7; }
+
+  .opts { margin-top: 12px; display: grid; gap: 8px; }
+  .o { position: relative; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px 0 0; background: #0b0e0f; border: 1px solid rgba(230,220,192,.22); overflow: hidden; }
+  .o .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--olive-dk), var(--olive)); opacity: .85; transition: width .5s cubic-bezier(.2,.8,.2,1); }
+  .o > * { position: relative; }
+  .o .num { align-self: stretch; display: grid; place-items: center; background: rgba(230,220,192,.14); font-size: 22px; font-weight: 700; }
+  .o .lab { font-size: 21px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .o .pct { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .o .pct small { font-size: 14px; font-weight: 500; opacity: .7; margin-left: 5px; }
+
+  /* encerrada: vencedor ganha destaque, o resto apaga */
+  #card.fim .o { opacity: .45; }
+  #card.fim .o.venceu { opacity: 1; border-color: var(--amber); }
+  #card.fim .o.venceu .fill { background: linear-gradient(90deg, #a56d12, var(--amber)); opacity: 1; }
+  #card.fim .o.venceu .num { background: var(--amber); color: var(--ink); }
+  #card.fim .o.venceu .lab, #card.fim .o.venceu .pct { color: #fff7e0; text-shadow: 0 1px 2px rgba(0,0,0,.55); }
+
+  .tempo { margin-top: 12px; height: 6px; background: #0b0e0f; }
+  .tempo i { display: block; height: 100%; width: 100%; background: var(--amber); }
+  #card.fim .tempo { display: none; }
+  .res { display: none; margin-top: 12px; font-size: 20px; font-weight: 700; color: var(--amber); }
+  #card.fim .res { display: block; }
+
+  @keyframes entra { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
+  @keyframes sai { to { opacity: 0; transform: translateY(-10px); } }
+  @media (prefers-reduced-motion: reduce) { #card.on, #card.sai { animation-duration: .01s; } .o .fill { transition: none; } }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="q" id="q"></div>
+  <div class="dica" id="dica">Vote no chat digitando o número da opção.</div>
+  <div class="opts" id="opts"></div>
+  <div class="tempo"><i id="tempo"></i></div>
+  <div class="res" id="res"></div>
+</div>
+<script>
+  // Opcao na URL: ?scale=1.2
+  const Q = new URLSearchParams(location.search);
+  const card = document.getElementById('card');
+  card.style.transform = 'scale(' + (Number(Q.get('scale')) || 1) + ')';
+  const $ = id => document.getElementById(id);
+  const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+  let atual = null, raf = null, ocultando = null;
+
+  function monta(p) {
+    $('q').textContent = p.q;
+    const box = $('opts'); box.replaceChildren();
+    p.opts.forEach((o, i) => {
+      const row = mk('div', 'o');
+      row.appendChild(mk('div', 'fill'));
+      row.appendChild(mk('div', 'num', i + 1));
+      row.appendChild(mk('div', 'lab', o.label));
+      const pct = mk('div', 'pct', '0%'); pct.appendChild(mk('small', null, '0'));
+      row.appendChild(pct);
+      box.appendChild(row);
+    });
+  }
+
+  function atualiza(p) {
+    const total = p.opts.reduce((s, o) => s + o.votes, 0);
+    [...$('opts').children].forEach((row, i) => {
+      const v = p.opts[i].votes, pc = total ? Math.round(v / total * 100) : 0;
+      row.querySelector('.fill').style.width = pc + '%';
+      row.querySelector('.pct').firstChild.nodeValue = pc + '%';
+      row.querySelector('small').textContent = v;
+      row.classList.toggle('venceu', !p.active && p.winners.includes(i));
+    });
+    if (!p.active) {
+      card.classList.add('fim');
+      $('res').textContent = !p.winners.length ? 'Sem votos — nenhuma opção venceu'
+        : p.winners.length > 1 ? 'Empate: ' + p.winners.map(i => p.opts[i].label).join(' e ')
+        : 'Venceu: ' + p.opts[p.winners[0]].label;
+    } else card.classList.remove('fim');
+  }
+
+  function relogio() {
+    cancelAnimationFrame(raf);
+    const tick = () => {
+      if (!atual || !atual.active) return;
+      const f = Math.max(0, (atual.endsAt - Date.now()) / (atual.endsAt - atual.startsAt));
+      $('tempo').style.width = (f * 100) + '%';
+      if (f > 0) raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function recebe(p) {
+    clearTimeout(ocultando);
+    if (!p) {
+      card.classList.add('sai');
+      ocultando = setTimeout(() => { card.classList.remove('on', 'sai', 'fim'); atual = null; }, 380);
+      return;
+    }
+    if (!atual || atual.id !== p.id) { monta(p); card.classList.remove('sai', 'fim'); card.classList.add('on'); }
+    atual = p; atualiza(p); relogio();
+  }
+
+  function conecta() {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === 'init') recebe(m.poll || null);
+      else if (m.type === 'poll') recebe(m.poll);
+    };
+    ws.onclose = () => setTimeout(conecta, 2000);
+  }
+  conecta();
+</script>
+</body>
+</html>

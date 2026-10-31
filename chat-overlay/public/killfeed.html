@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>killfeed</title>
+<style>
+  :root {
+    --ink: #14181a;
+    --sand: #e6dcc0;
+    --follow: #8fcf74;
+    --sub: #e8a33a;
+    --raid: #e8663d;
+    --bits: #a98bff;
+    --donation: #4fd1a5;
+    --rankup: #86b9e0;
+    --clip: #d9b45a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; overflow: hidden; height: 100%; }
+  body { font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; }
+
+  #feed {
+    position: fixed; top: 16px; right: 16px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    transform-origin: top right;
+  }
+  body.left #feed { right: auto; left: 16px; align-items: flex-start; transform-origin: top left; }
+  body.bottom #feed { top: auto; bottom: 16px; flex-direction: column-reverse; transform-origin: bottom right; }
+  body.bottom.left #feed { transform-origin: bottom left; }
+
+  .k {
+    --c: var(--sand);
+    display: flex; align-items: baseline; gap: 9px;
+    max-width: 560px;
+    padding: 7px 16px 7px 12px;
+    background: linear-gradient(90deg, rgba(20,24,26,.92), rgba(20,24,26,.78));
+    border-left: 5px solid var(--c);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+    color: var(--sand);
+    font-size: 21px; font-weight: 600; letter-spacing: .01em;
+    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+    animation: entra .28s cubic-bezier(.2,.9,.25,1) both;
+  }
+  body.left .k {
+    padding: 7px 12px 7px 16px;
+    border-left: 0; border-right: 5px solid var(--c);
+    clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%);
+  }
+  .k.sai { animation: sai .35s ease-in forwards; }
+
+  .k .who { color: var(--c); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .k .msg { opacity: .92; }
+  .k .amt {
+    margin-left: 2px; padding: 0 8px; border: 1px solid var(--c); color: var(--c);
+    font-size: 17px; line-height: 24px; white-space: nowrap;
+  }
+
+  .t-follow { --c: var(--follow); }
+  .t-sub, .t-giftsub { --c: var(--sub); }
+  .t-raid { --c: var(--raid); }
+  .t-bits { --c: var(--bits); }
+  .t-donation { --c: var(--donation); }
+  .t-rankup { --c: var(--rankup); }
+  .t-clip { --c: var(--clip); }
+
+  @keyframes entra { from { opacity: 0; transform: translateX(46px); } to { opacity: 1; transform: none; } }
+  body.left .k { animation-name: entraE; }
+  @keyframes entraE { from { opacity: 0; transform: translateX(-46px); } to { opacity: 1; transform: none; } }
+  @keyframes sai { to { opacity: 0; transform: translateY(-8px); } }
+
+  @media (prefers-reduced-motion: reduce) { .k, .k.sai { animation-duration: .01s; } }
+</style>
+</head>
+<body>
+<div id="feed"></div>
+<script>
+  // Opcoes na URL: ?side=left  ?bottom=1  ?max=6  ?ttl=14 (segundos)  ?scale=1.2
+  const Q = new URLSearchParams(location.search);
+  const MAX = Math.max(1, Number(Q.get('max')) || 6);
+  const TTL = Math.max(3, Number(Q.get('ttl')) || 14) * 1000;
+  const SCALE = Number(Q.get('scale')) || 1;
+  if (Q.get('side') === 'left') document.body.classList.add('left');
+  if (Q.get('bottom') === '1') document.body.classList.add('bottom');
+
+  const feed = document.getElementById('feed');
+  feed.style.transform = 'scale(' + SCALE + ')';
+
+  // cada tipo vira uma frase curta, no clima da live
+  const TEXTO = {
+    follow:   ev => ({ msg: 'entrou na tropa' }),
+    sub:      ev => ({ msg: ev.months > 1 ? 'renovou o alistamento (' + ev.months + ' meses)' : 'se alistou como apoiador' }),
+    giftsub:  ev => ({ msg: ev.from ? 'foi recrutado por ' + ev.from : 'ganhou um alistamento' }),
+    raid:     ev => ({ msg: 'chegou com reforços', amt: ev.amount ? '+' + ev.amount : '' }),
+    bits:     ev => ({ msg: 'lançou suprimentos', amt: ev.amount ? ev.amount + ' bits' : '' }),
+    donation: ev => ({ msg: 'enviou suprimentos', amt: ev.amount || '' }),
+    rankup:   ev => ({ msg: 'foi promovido a ' + (ev.rank || '') }),
+    clip:     ev => ({ msg: 'gravou um clip' })
+  };
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;   // textContent: nome de viewer nunca vira HTML
+    return e;
+  }
+
+  function mostra(ev) {
+    const f = TEXTO[ev.type];
+    if (!f) return;
+    const t = f(ev);
+    const k = el('div', 'k t-' + ev.type);
+    k.appendChild(el('span', 'who', ev.name || 'Alguém'));
+    k.appendChild(el('span', 'msg', t.msg));
+    if (t.amt) k.appendChild(el('span', 'amt', t.amt));
+    feed.prepend(k);
+
+    while (feed.children.length > MAX) feed.lastElementChild.remove();
+    setTimeout(() => { k.classList.add('sai'); setTimeout(() => k.remove(), 380); }, TTL);
+  }
+
+  function conecta() {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === 'event') mostra(m.ev);   // historico do init e ignorado de proposito
+    };
+    ws.onclose = () => setTimeout(conecta, 2000);
+  }
+  conecta();
+</script>
+</body>
+</html>

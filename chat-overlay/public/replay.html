@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>replay</title>
+<style>
+  :root { --ink: #14181a; --sand: #e6dcc0; --amber: #e8a33a; --red: #e0352b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; color: var(--sand); }
+
+  #box { display: none; width: 640px; transform-origin: top left; background: #0b0e0f; border-top: 4px solid var(--amber); }
+  #box.on { display: block; animation: entra .4s cubic-bezier(.2,.9,.25,1) both; }
+  #box.sai { animation: sai .35s ease-in forwards; }
+  video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .rod { display: flex; align-items: center; gap: 10px; padding: 8px 14px 10px; background: linear-gradient(180deg, rgba(20,24,26,.96), rgba(20,24,26,.88)); }
+  .rec { width: 12px; height: 12px; border-radius: 50%; background: var(--red); animation: pisca 1s steps(2) infinite; }
+  .tit { font-size: 22px; font-weight: 700; }
+  .por { margin-left: auto; font-size: 19px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+  @keyframes entra { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  @keyframes sai { to { opacity: 0; transform: translateY(10px); } }
+  @keyframes pisca { 50% { opacity: .15; } }
+  @media (prefers-reduced-motion: reduce) { #box.on, #box.sai { animation-duration: .01s; } .rec { animation: none; } }
+</style>
+</head>
+<body>
+<div id="box">
+  <video id="v" playsinline></video>
+  <div class="rod"><span class="rec"></span><span class="tit">Replay</span><span class="por" id="por"></span></div>
+</div>
+<script>
+  // Opcoes na URL: ?scale=1.2  ?mudo=1 (sem som)
+  const Q = new URLSearchParams(location.search);
+  const box = document.getElementById('box'), v = document.getElementById('v');
+  box.style.transform = 'scale(' + (Number(Q.get('scale')) || 1) + ')';
+  v.muted = Q.get('mudo') === '1';
+
+  const fila = []; let tocando = false, limite = null;
+
+  function termina() {
+    clearTimeout(limite);
+    box.classList.add('sai');
+    setTimeout(() => { box.classList.remove('on', 'sai'); v.removeAttribute('src'); v.load(); tocando = false; proximo(); }, 380);
+  }
+  function proximo() {
+    if (tocando || !fila.length) return;
+    tocando = true;
+    const c = fila.shift();
+    document.getElementById('por').textContent = 'clip de ' + c.by;
+    v.src = c.url;
+    v.onended = termina;
+    v.onerror = termina;
+    v.onloadedmetadata = () => { box.classList.add('on'); v.play().catch(termina); };
+    limite = setTimeout(termina, (c.max || 30) * 1000);   // trava de seguranca
+  }
+
+  function conecta() {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === 'replay') { fila.push(m.clip); proximo(); }
+    };
+    ws.onclose = () => setTimeout(conecta, 2000);
+  }
+  conecta();
+</script>
+</body>
+</html>

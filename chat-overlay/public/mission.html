@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>missão</title>
+<style>
+  :root {
+    --ink: #14181a;
+    --olive: #6f8a4e;
+    --olive-dk: #3f5230;
+    --sand: #e6dcc0;
+    --amber: #e8a33a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; color: var(--sand); }
+
+  #card {
+    position: relative; width: 560px; padding: 12px 18px 14px;
+    background: linear-gradient(180deg, rgba(20,24,26,.94), rgba(20,24,26,.82));
+    border-top: 4px solid var(--olive);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+    transform-origin: top left;
+  }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .title { font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+  .fase { margin-left: 10px; font-size: 16px; font-weight: 600; color: var(--amber); }
+  .conta { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .conta small { font-size: 20px; font-weight: 600; opacity: .7; }
+
+  /* barra segmentada: cada ticket de 5% e uma "municao" */
+  .gauge {
+    position: relative; height: 22px; margin: 10px 0 8px;
+    background: #0b0e0f; border: 1px solid rgba(230,220,192,.28);
+  }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: 0%;
+    background:
+      repeating-linear-gradient(135deg, rgba(255,255,255,.16) 0 8px, transparent 8px 16px),
+      linear-gradient(90deg, var(--olive-dk), var(--olive));
+    background-size: 22.6px 22.6px, 100% 100%;
+    animation: marcha 1.4s linear infinite;
+    transition: width .9s cubic-bezier(.2,.8,.2,1);
+  }
+  .ticks {
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(11,14,15,.95) calc(10% - 2px) 10%);
+  }
+  .label { font-size: 17px; opacity: .85; }
+
+  @keyframes marcha { to { background-position: 22.6px 0, 0 0; } }
+
+  /* momento de missao cumprida */
+  #ok {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
+    background: var(--amber); color: var(--ink); text-align: center;
+  }
+  #ok .big { font-size: 40px; font-weight: 700; letter-spacing: .03em; line-height: 1; }
+  #ok .sub { margin-top: 6px; font-size: 19px; font-weight: 600; }
+  #card.venceu #ok { display: flex; animation: carimbo .5s cubic-bezier(.2,1.4,.3,1) both; }
+  @keyframes carimbo { from { opacity: 0; transform: scale(1.25) rotate(-2deg); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) { .fill { animation: none; transition: none; } #card.venceu #ok { animation: none; } }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="top">
+    <div><span class="title" id="title">Missão</span><span class="fase" id="fase">Fase 1</span></div>
+    <div class="conta"><span id="cur">0</span><small> / <span id="goal">50</span></small></div>
+  </div>
+  <div class="gauge"><div class="fill" id="fill"></div><div class="ticks"></div></div>
+  <div class="label" id="label">Novos recrutas</div>
+  <div id="ok"><div class="big">Missão cumprida</div><div class="sub" id="oksub"></div></div>
+</div>
+<script>
+  // Opcao na URL: ?scale=1.2
+  const Q = new URLSearchParams(location.search);
+  const card = document.getElementById('card');
+  card.style.transform = 'scale(' + (Number(Q.get('scale')) || 1) + ')';
+
+  const $ = id => document.getElementById(id);
+  let comemorando = false, pendente = null;
+
+  function render(m) {
+    $('title').textContent = m.title || 'Missão';
+    $('fase').textContent = 'Fase ' + m.level;
+    $('label').textContent = m.label || '';
+    $('cur').textContent = m.current;
+    $('goal').textContent = m.goal;
+    $('fill').style.width = Math.min(100, (m.current / m.goal) * 100) + '%';
+  }
+
+  function cumprida(m, nivel) {
+    comemorando = true;
+    // enche a barra da fase que acabou, depois carimba, depois mostra a nova fase
+    $('fill').style.width = '100%';
+    $('oksub').textContent = 'Fase ' + nivel + ' concluída';
+    setTimeout(() => card.classList.add('venceu'), 900);
+    setTimeout(() => {
+      card.classList.remove('venceu');
+      comemorando = false;
+      render(pendente || m);
+      pendente = null;
+    }, 7000);
+  }
+
+  function conecta() {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === 'init' && m.mission) render(m.mission);
+      else if (m.type === 'mission') {
+        if (m.completed && !comemorando) cumprida(m.mission, m.completed);
+        else if (comemorando) pendente = m.mission;   // chegou evento durante o carimbo: mostra depois
+        else render(m.mission);
+      }
+    };
+    ws.onclose = () => setTimeout(conecta, 2000);
+  }
+  conecta();
+</script>
+</body>
+</html>
