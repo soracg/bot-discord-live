@@ -620,36 +620,40 @@ const obsLog = m => { if (m !== obsLastMsg) { console.log('[obs] ' + m); obsLast
 
 function startObs() {
   if (hubCfg.obs.enabled === false) return;
-  const ws = new WebSocket(hubCfg.obs.url);
-  obs = ws;
-  ws.on('message', raw => {
-    let m; try { m = JSON.parse(raw); } catch { return; }
-    if (m.op === 0) {
-      const ident = { rpcVersion: 1 };
-      if (m.d.authentication) {
-        if (!hubCfg.obs.password) obsLog('o OBS pede senha: coloque obs.password no hub.config.json');
-        else {
-          const secret = crypto.createHash('sha256').update(hubCfg.obs.password + m.d.authentication.salt).digest('base64');
-          ident.authentication = crypto.createHash('sha256').update(secret + m.d.authentication.challenge).digest('base64');
+  try {
+    const ws = new WebSocket(hubCfg.obs.url);
+    obs = ws;
+    ws.on('message', raw => {
+      let m; try { m = JSON.parse(raw); } catch { return; }
+      if (m.op === 0) {
+        const ident = { rpcVersion: 1 };
+        if (m.d.authentication) {
+          if (!hubCfg.obs.password) obsLog('o OBS pede senha: coloque obs.password no hub.config.json');
+          else {
+            const secret = crypto.createHash('sha256').update(hubCfg.obs.password + m.d.authentication.salt).digest('base64');
+            ident.authentication = crypto.createHash('sha256').update(secret + m.d.authentication.challenge).digest('base64');
+          }
         }
-      }
-      ws.send(JSON.stringify({ op: 1, d: ident }));
-    } else if (m.op === 2) { obsReady = true; obsLog('conectado'); obsOnReady(); }
-    else if (m.op === 7) {
-      const p = obsPending.get(m.d.requestId); if (!p) return;
-      obsPending.delete(m.d.requestId); clearTimeout(p.t);
-      if (m.d.requestStatus.result) p.res(m.d.responseData || {});
-      else p.rej(new Error(m.d.requestStatus.comment || ('codigo ' + m.d.requestStatus.code)));
-    } else if (m.op === 5) obsEvent(m.d);
-  });
-  ws.on('close', code => {
-    if (code === 4009) obsLog('senha do OBS incorreta');
-    else if (obsReady) obsLog('desconectado, tentando de novo...');
-    obsReady = false;
-    obsPending.forEach(p => { clearTimeout(p.t); p.rej(new Error('OBS desconectou')); }); obsPending.clear();
-    setTimeout(startObs, 5000);
-  });
-  ws.on('error', e => obsLog(e.code === 'ECONNREFUSED' ? 'OBS nao encontrado' : 'erro: ' + e.message));
+        ws.send(JSON.stringify({ op: 1, d: ident }));
+      } else if (m.op === 2) { obsReady = true; obsLog('conectado'); obsOnReady(); }
+      else if (m.op === 7) {
+        const p = obsPending.get(m.d.requestId); if (!p) return;
+        obsPending.delete(m.d.requestId); clearTimeout(p.t);
+        if (m.d.requestStatus.result) p.res(m.d.responseData || {});
+        else p.rej(new Error(m.d.requestStatus.comment || ('codigo ' + m.d.requestStatus.code)));
+      } else if (m.op === 5) obsEvent(m.d);
+    });
+    ws.on('close', code => {
+      if (code === 4009) obsLog('senha do OBS incorreta');
+      else if (obsReady) obsLog('desconectado, tentando de novo...');
+      obsReady = false;
+      obsPending.forEach(p => { clearTimeout(p.t); p.rej(new Error('OBS desconectou')); }); obsPending.clear();
+      setTimeout(startObs, 5000);
+    });
+    ws.on('error', e => obsLog(e.code === 'ECONNREFUSED' ? 'OBS nao encontrado' : 'erro: ' + e.message));
+  } catch (err) {
+    obsLog('Modo nuvem: OBS local indisponível, ignorando conexão.');
+  }
 }
 function obsReq(type, data) {
   return new Promise((res, rej) => {
@@ -812,21 +816,21 @@ function startHubDemo() {
   setInterval(() => { const t = kinds[n % kinds.length]; hubEvent({ type: t, name: names[n % names.length], platform: 'twitch', ...extra[t] }); n++; }, 3500);
 }
 
-server.listen(cfg.port, () => {
+const PORT = process.env.PORT || cfg.port || 3000;
+server.listen(PORT, () => {
   console.log(`\n  Versao ${VERSION} - pasta: ${__dirname}`);
-  console.log(`\n  Overlay (OBS Browser Source): http://localhost:${cfg.port}/overlay`);
-  console.log(`  Painel  (OBS Custom Dock):    http://localhost:${cfg.port}/dock`);
-  console.log(`  Killfeed (OBS Browser Source): http://localhost:${cfg.port}/killfeed`);
-  console.log(`  Missao   (OBS Browser Source): http://localhost:${cfg.port}/mission`);
-  console.log(`  Ranking  (OBS Browser Source): http://localhost:${cfg.port}/ranking`);
-  console.log(`  Votacao  (OBS Browser Source): http://localhost:${cfg.port}/votacao`);
-  console.log(`  Efeitos  (OBS Browser Source): http://localhost:${cfg.port}/efeitos`);
-  console.log(`  Replay   (OBS Browser Source): http://localhost:${cfg.port}/replay\n`);
+  console.log(`  Servidor rodando na porta ${PORT}`);
+  console.log(`\n  Overlay (OBS Browser Source): http://localhost:${PORT}/overlay`);
+  console.log(`  Painel  (OBS Custom Dock):    http://localhost:${PORT}/dock`);
+  console.log(`  Killfeed (OBS Browser Source): http://localhost:${PORT}/killfeed`);
+  console.log(`  Missao   (OBS Browser Source): http://localhost:${PORT}/mission`);
+  console.log(`  Ranking  (OBS Browser Source): http://localhost:${PORT}/ranking`);
+  console.log(`  Votacao  (OBS Browser Source): http://localhost:${PORT}/votacao`);
+  console.log(`  Efeitos  (OBS Browser Source): http://localhost:${PORT}/efeitos`);
+  console.log(`  Replay   (OBS Browser Source): http://localhost:${PORT}/replay\n`);
 
-  // Inicia o bot autenticado da Twitch (que abre o WebSocket local na porta 8080 para o painel)
+  // Inicia os serviços unificados na porta correta
   twitchChatBot.start();
-
-  if (process.argv.includes('--demo')) return startDemo();
   startTwitch();
   startYouTube();
   startKick();
