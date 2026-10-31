@@ -16,12 +16,15 @@ const CHAT_LINKS = {
   twitch: `https://twitch.tv/${twitchHandle}`,
   youtube: `https://www.youtube.com/@${youtubeHandle}`,
   tiktok: `https://www.tiktok.com/@${tiktokHandle}`,
+  instagram: `https://www.instagram.com/soracg26/`,
 };
 
+// Mensagens automáticas intercaladas (configuradas para rotacionar no timer)
 const TIMER_MESSAGES = [
-  `🔥 Quer receber avisos das lives e trocar ideia com a comunidade? Chega no Discord: ${CHAT_LINKS.discord}`,
+  `🔥 Cola no Discord da comunidade para receber avisos das lives, trocar ideia com a tropa e ficar por dentro de tudo! ${CHAT_LINKS.discord}`,
+  `🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | Instagram: https://www.instagram.com/soracg26 | Discord: ${CHAT_LINKS.discord}`,
+  '🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)',
   '📢 Dica de suporte: Vai dar aquele lurk? Mute o som clicando com o botão direito na aba do navegador. Evite mutar o player para que sua presença ajude na nossa meta de viewers! 🚀',
-  `🎬 Os melhores momentos também vão para o YouTube e TikTok! Me encontra como @${defaultHandle}.`,
 ];
 
 const MODERATION_PATTERNS = [
@@ -98,7 +101,7 @@ class TwitchChatBot {
     this.lastShoutoutByUser = new Map();
     this.offenseTimes = new Map();
     this.ircBuffer = '';
-    this.wss = null; // Servidor WebSocket para o Painel/OBS
+    this.wss = null; // Servidor WebSocket local para integração com o Painel / OBS
   }
 
   enabled() {
@@ -127,7 +130,7 @@ class TwitchChatBot {
 
       console.log(`[twitch-chat] autenticação pronta como ${this.chatUsername}; canal #${this.channelLogin}`);
       this.connect();
-      this.startControlServer(); // Inicia o servidor WebSocket para receber comandos do painel HTML
+      this.startControlServer(); // Inicia o servidor WebSocket para receber mensagens vindas do Painel HTML
 
       this.livePollTimer = setInterval(() => this.updateLiveStatus().catch(() => {}), 60_000);
       this.messageTimer = setInterval(() => this.maybeSendTimer().catch(() => {}), 30_000);
@@ -138,12 +141,12 @@ class TwitchChatBot {
     }
   }
 
-  // Abre um servidor WebSocket local na porta 8080 (ou configurável) para o painel HTML interagir
+  // Abre um servidor WebSocket local para o painel HTML conseguir enviar mensagens de chat
   startControlServer() {
     const port = Number(env.TWITCH_DOCK_PORT || 8080);
     try {
       this.wss = new WebSocket.Server({ port });
-      console.log(`[twitch-chat] Servidor de controle para o painel ouvindo na porta ${port}`);
+      console.log(`[twitch-chat] Servidor WebSocket de controle para o painel ouvindo na porta ${port}`);
 
       this.wss.on('connection', (socket) => {
         socket.on('message', (raw) => {
@@ -378,6 +381,7 @@ class TwitchChatBot {
   async handleChatMessage(login, message, tags) {
     const trusted = this.isModerator(tags, login);
 
+    // Espelha a mensagem da Twitch no canal #log-chat-live do Discord (ID: 1558258121791504534)
     try {
       const discordClient = global.discordClient;
       if (discordClient) {
@@ -418,7 +422,7 @@ class TwitchChatBot {
         break;
       case '!redes':
       case '!links':
-        this.sendChat(`🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | TikTok: ${CHAT_LINKS.tiktok} | Discord: ${CHAT_LINKS.discord}`);
+        this.sendChat(`🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | Instagram: https://www.instagram.com/soracg26 | Discord: ${CHAT_LINKS.discord}`);
         break;
       case '!youtube':
         this.sendChat(`▶️ Se inscreve no YouTube para ver os melhores momentos: ${CHAT_LINKS.youtube}`);
@@ -441,7 +445,7 @@ class TwitchChatBot {
         this.sendChat(`🌙 ${displayName} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
         break;
       case '!comandos':
-        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
+        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !alerta | !clip | !fumaca | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
         break;
       case '!so':
         if (trusted) await this.shoutout(args[0], userId);
@@ -474,10 +478,13 @@ class TwitchChatBot {
 
   async maybeSendTimer() {
     if (!this.isLive || !this.connected) return;
-    const interval = Math.max(5, Number(env.TWITCH_TIMER_INTERVAL_MINUTES) || 20) * 60_000;
-    const minLines = Math.max(1, Number(env.TWITCH_TIMER_MIN_LINES) || 5);
+    
+    const interval = Math.max(5, Number(env.TWITCH_TIMER_INTERVAL_MINUTES) || 30) * 60_000;
+    const minLines = Math.max(0, Number(env.TWITCH_TIMER_MIN_LINES) || 0);
     const now = Date.now();
+    
     if (now - this.lastTimerAt < interval || this.chatLines < minLines) return;
+    
     const message = TIMER_MESSAGES[this.timerMessageIndex % TIMER_MESSAGES.length];
     if (this.sendChat(message)) {
       this.timerMessageIndex = (this.timerMessageIndex + 1) % TIMER_MESSAGES.length;
