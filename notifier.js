@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cfg = require('./config');
 const { state, save } = require('./store');
+const instagram = require('./instagramStory');
 
 const env = process.env;
 const POLL_MS = Math.max(30, Number(env.POLL_SECONDS) || 60) * 1000;
@@ -230,6 +231,7 @@ async function handleLive(client, liveList) {
   state.live = { messageId: msg.id, channelId: channel.id, startedAt, sig, miss: 0, title };
   save();
   console.log(`[notifier] live no ar (${sig})`);
+  if (!prev) instagram.postLiveStory({ game: liveList.find((l) => l.game)?.game }); // só quando a live começa
 }
 
 async function handleOffline(client, hadError) {
@@ -283,6 +285,7 @@ function start(client) {
   const on = ORDER.filter((k) => cfg.links[k] || (k === 'youtube' && env.YOUTUBE_HANDLE));
   if (!on.length) console.warn('[notifier] nenhuma plataforma configurada no .env');
   else console.log(`[notifier] monitorando: ${on.join(', ')} (a cada ${POLL_MS / 1000}s)`);
+  instagram.start();
   poll(client);
   setInterval(() => poll(client), POLL_MS);
 }

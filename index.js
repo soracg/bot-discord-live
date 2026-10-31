@@ -81,6 +81,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('storytest')
     .setDescription('Posta o story de live no Instagram agora (teste; publica de verdade)')
+    .addStringOption((o) => o.setName('jogo').setDescription('Jogo para testar a imagem certa (ex: War Dogs)'))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('loja')
@@ -307,9 +308,9 @@ client.on(Events.InteractionCreate, async (i) => {
         }
         case 'storytest': {
           await i.deferReply({ flags: EPHEMERAL });
-          const r = await instagram.postLiveStory({ force: true });
+          const r = await instagram.postLiveStory({ force: true, game: i.options.getString('jogo') });
           const msg = r.ok
-            ? `Story publicado no Instagram (id ${r.id}).`
+            ? `Story publicado no Instagram (imagem: ${r.matched ?? 'padrão'}).`
             : r.reason === 'config'
               ? 'Faltam IG_USER_ID, IG_TOKEN ou IG_STORY_IMAGE_URL no ambiente.'
               : `Não consegui postar: ${r.error ?? r.reason}`;

@@ -5,7 +5,9 @@
 // .env / Render:
 //   IG_USER_ID           id da conta do Instagram
 //   IG_TOKEN             token gerado no painel do app (so o inicial)
-//   IG_STORY_IMAGE_URL   link publico HTTPS de um JPG 1080x1920
+//   IG_STORY_IMAGE_URL   imagem padrao (JPG 1080x1920, link publico HTTPS)
+//   IG_STORY_IMAGES      (opcional) imagem por jogo: "jogo=url;outro jogo=url"
+//                        ex: War Dogs=https://site/wd.jpg;Hell Let Loose=https://site/hll.jpg
 //   IG_STORY_COOLDOWN_H  (opcional) horas minimas entre stories, padrao 4
 
 const fs = require('fs');
@@ -45,6 +47,36 @@ function saveToken() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// "War Dogs" == "WarDogs" == "wardogs": ignora acento, espaco e pontuacao
+const norm = (s) =>
+  String(s ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+function parseImages() {
+  return (process.env.IG_STORY_IMAGES || '')
+    .split(';')
+    .map((p) => {
+      const i = p.indexOf('=');
+      return i > 0 ? [p.slice(0, i).trim(), p.slice(i + 1).trim()] : null;
+    })
+    .filter((e) => e && e[0] && /^https:\/\//.test(e[1]));
+}
+
+/** Escolhe a imagem pelo jogo da live; sem correspondencia, usa a padrao. */
+function pickImage(game) {
+  const g = norm(game);
+  if (g) {
+    for (const [name, url] of parseImages()) {
+      const n = norm(name);
+      if (n && (g.includes(n) || n.includes(g))) return { url, matched: name };
+    }
+  }
+  return { url: process.env.IG_STORY_IMAGE_URL || null, matched: null };
+}
+
 async function call(p, { method = 'GET', params = {} } = {}) {
   const info = loadToken();
   if (!info) throw new Error('sem token (IG_TOKEN)');
@@ -83,9 +115,10 @@ function start() {
   setInterval(refreshIfNeeded, DAY).unref?.();
 }
 
-async function postLiveStory({ force = false } = {}) {
-  const { IG_USER_ID, IG_STORY_IMAGE_URL } = process.env;
-  if (!IG_USER_ID || !loadToken() || !IG_STORY_IMAGE_URL) return { ok: false, reason: 'config' };
+async function postLiveStory({ force = false, game } = {}) {
+  const { IG_USER_ID } = process.env;
+  const image = pickImage(game);
+  if (!IG_USER_ID || !loadToken() || !image.url) return { ok: false, reason: 'config' };
 
   const cooldownMs = Number(process.env.IG_STORY_COOLDOWN_H || 4) * 3600 * 1000;
   if (!force && Date.now() - (state.igStoryAt ?? 0) < cooldownMs) {
@@ -101,7 +134,7 @@ async function postLiveStory({ force = false } = {}) {
   try {
     const container = await call(`/${IG_USER_ID}/media`, {
       method: 'POST',
-      params: { media_type: 'STORIES', image_url: IG_STORY_IMAGE_URL },
+      params: { media_type: 'STORIES', image_url: image.url },
     });
 
     for (let i = 0; i < 10; i++) {
@@ -117,8 +150,8 @@ async function postLiveStory({ force = false } = {}) {
       method: 'POST',
       params: { creation_id: container.id },
     });
-    console.log('[IG] story publicado:', out.id);
-    return { ok: true, id: out.id };
+    console.log(`[IG] story publicado: ${out.id} (imagem: ${image.matched ?? 'padrao'})`);
+    return { ok: true, id: out.id, matched: image.matched };
   } catch (e) {
     if (!force) {
       state.igStoryAt = 0; // falhou: permite tentar de novo
