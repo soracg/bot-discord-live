@@ -1,13 +1,17 @@
 {
   "debug": false,
   "streamlabs": {
-    "socketToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IkQwN0YyN0Q3RjBBNkE5RUE4ODI5IiwicmVhZF9vbmx5Ijp0cnVlLCJwcmV2ZW50X21hc3RlciI6dHJ1ZSwidHdpdGNoX2lkIjoiNDUxNzk3MTYiLCJ5b3V0dWJlX2lkIjoiVUM5Vm1vaGY2OWJWMlpsV2xjOFE4c2tnIiwia2lja19pZCI6Ijg0Nzc5MDI3IiwidGlrdG9rX2lkIjoiYjk2YzRjNDQtMmJmNy01ODQzLTg2YTUtZjhlODZiOGNjZjU1IiwiZmFjZWJvb2tfaWQiOiIyODg5MjAxMTI4Mzc4NjI3NiJ9.MmfWSnWEqaoqKPLFkH4mDGRmFtLb1yf6_pbtERT6ASY"
+    "socketToken": ""
   },
   "mission": {
     "title": "Operação novos recrutas!",
     "label": "Novos recrutas",
     "goal": 50,
     "nextAdd": 25,
-    "count": { "follow": 1, "sub": 1, "giftsub": 1 }
+    "count": {
+      "follow": 1,
+      "sub": 1,
+      "giftsub": 1
+    }
   }
 }

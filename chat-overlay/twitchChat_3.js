@@ -143,9 +143,11 @@ class TwitchChatBot {
 
   // Abre um servidor WebSocket local para o painel HTML conseguir enviar mensagens de chat
   startControlServer() {
+    if (String(env.TWITCH_DOCK_PORT).toLowerCase() === 'off') return;   // na nuvem o painel usa o /ws do servidor principal
     const port = Number(env.TWITCH_DOCK_PORT || 8080);
     try {
       this.wss = new WebSocket.Server({ port });
+      this.wss.on('error', e => console.error('[twitch-chat] porta de controle do painel indisponivel (' + e.code + ') - ignorando'));
       console.log(`[twitch-chat] Servidor WebSocket de controle para o painel ouvindo na porta ${port}`);
 
       this.wss.on('connection', (socket) => {

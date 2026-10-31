@@ -16,8 +16,18 @@ const history = [];
 const status = { twitch: false, youtube: false, kick: false };
 let pinned = null;
 const seen = new Set();
+const DOCK_KEY = process.env.DOCK_KEY || '';          // senha do painel na nuvem (defina no Render)
+let twitchBot = null;                                  // instancia do bot autenticado (envia no chat)
+const isLoopback = req => /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || '') && !req.headers['x-forwarded-for'];
+const keyOk = k => !!DOCK_KEY && typeof k === 'string' && k.length === DOCK_KEY.length && require('crypto').timingSafeEqual(Buffer.from(k), Buffer.from(DOCK_KEY));
 
 const server = http.createServer((req, res) => {
+  const pth = req.url.split('?')[0];
+  if (pth === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+  if (pth === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ...status, botTwitchConectado: !!(twitchBot && twitchBot.connected), clientesWS: wss.clients.size, mensagensNaMemoria: history.length, painelProtegidoPorChave: !!DOCK_KEY }));
+  }
   if (hubHttp(req, res)) return;
   const url = req.url.split('?')[0];
   const map = { '/': 'dock.html', '/dock': 'dock.html', '/overlay': 'overlay.html', '/killfeed': 'killfeed.html', '/mission': 'mission.html', '/ranking': 'ranking.html', '/votacao': 'votacao.html', '/efeitos': 'efeitos.html', '/replay': 'replay.html' };
@@ -33,17 +43,31 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, path: '/ws' });
 const send = (ws, o) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(o));
 const broadcast = o => wss.clients.forEach(ws => send(ws, o));
+setInterval(() => wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.ping(); }), 25000);
 
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  const key = new URL(req.url, 'http://x').searchParams.get('key');
+  ws.canControl = isLoopback(req) || keyOk(key);     // overlays so leem; o painel precisa de ?key=
   send(ws, { type: 'init', history, status, pinned, mission: missionView(), ranking: rankingView(), poll: pollView() });
+  send(ws, { type: 'auth', control: ws.canControl });
   ws.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch { return; }
+    if (!ws.canControl) {
+      if (m.type === 'send_chat' || m.type === 'send') send(ws, { type: 'sent', ok: false, error: 'sem permissao: abra o painel com ?key=SUA_CHAVE (variavel DOCK_KEY no Render)' });
+      return;
+    }
     if (m.type === 'hide') broadcast({ type: 'delete', id: m.id });
     else if (m.type === 'pin') {
       pinned = history.find(h => h.id === m.id) || null;
       broadcast({ type: 'pin', msg: pinned });
     } else if (m.type === 'unpin') { pinned = null; broadcast({ type: 'pin', msg: null }); }
     else if (m.type === 'clear') broadcast({ type: 'clear' });
+    else if ((m.type === 'send_chat' && m.message) || (m.type === 'send' && m.text)) {
+      const txt = String(m.message || m.text).trim().slice(0, 480);
+      const ok = !!(txt && twitchBot && twitchBot.sendChat(txt));
+      console.log(ok ? '[dock] enviado ao chat: ' + txt : '[dock] NAO enviou (bot da Twitch desconectado ou sem token): ' + txt);
+      send(ws, { type: 'sent', ok, error: ok ? null : 'o bot da Twitch nao esta conectado/autenticado (veja [twitch-chat] no log do Render)' });
+    }
   });
 });
 
@@ -332,8 +356,8 @@ const hubCfg = (() => {
   const u = readJson(path.join(__dirname, 'hub.config.json'), {});
   return {
     debug: !!u.debug,
-    streamlabs: Object.assign({ socketToken: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IkQwN0YyN0Q3RjBBNkE5RUE4ODI5IiwicmVhZF9vbmx5Ijp0cnVlLCJwcmV2ZW50X21hc3RlciI6dHJ1ZSwidHdpdGNoX2lkIjoiNDUxNzk3MTYiLCJ5b3V0dWJlX2lkIjoiVUM5Vm1vaGY2OWJWMlpsV2xjOFE4c2tnIiwia2lja19pZCI6Ijg0Nzc5MDI3IiwidGlrdG9rX2lkIjoiYjk2YzRjNDQtMmJmNy01ODQzLTg2YTUtZjhlODZiOGNjZjU1IiwiZmFjZWJvb2tfaWQiOiIyODg5MjAxMTI4Mzc4NjI3NiJ9.MmfWSnWEqaoqKPLFkH4mDGRmFtLb1yf6_pbtERT6ASY' }, u.streamlabs),
-    obs: Object.assign({ enabled: true, url: 'ws://192.168.1.78:4455', password: 'rb6CeZbto63AFNqp' }, u.obs),
+    streamlabs: Object.assign({ socketToken: process.env.STREAMLABS_SOCKET_TOKEN || '' }, u.streamlabs),
+    obs: Object.assign({ enabled: !!process.env.OBS_WS_URL, url: process.env.OBS_WS_URL || 'ws://127.0.0.1:4455', password: process.env.OBS_WS_PASSWORD || '' }, u.obs),
     replay: Object.assign({ autoStart: true, ffmpegPath: 'ffmpeg', maxSeconds: 30 }, u.replay),
     commands: u.commands || {},
     xp: Object.assign({ perMessage: 5, cooldownSec: 30, follow: 50, sub: 200, giftsub: 100, bitsPer100: 20, donation: 100, raid: 0 }, u.xp),
@@ -763,7 +787,7 @@ function hubHttp(req, res) {
   const u = new URL(req.url, 'http://localhost');
   const p = u.pathname;
   if (p !== '/test' && !p.startsWith('/api/') && !p.startsWith('/clips/')) return false;
-  if (!/^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || '')) { res.writeHead(403); res.end('somente local'); return true; }
+  if (!(isLoopback(req) || keyOk(u.searchParams.get('key')))) { res.writeHead(403); res.end('somente local ou com ?key='); return true; }
   if (p.startsWith('/clips/')) return serveClip(req, res, p.slice(7));
   const q = Object.fromEntries(u.searchParams);
   const out = o => { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(o)); return true; };
@@ -830,7 +854,7 @@ server.listen(PORT, () => {
   console.log(`  Replay   (OBS Browser Source): http://localhost:${PORT}/replay\n`);
 
   // Inicia os serviços unificados na porta correta
-  twitchChatBot.start();
+  twitchBot = twitchChatBot.start();
   startTwitch();
   startYouTube();
   startKick();
