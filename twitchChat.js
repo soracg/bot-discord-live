@@ -16,12 +16,13 @@ const CHAT_LINKS = {
   twitch: `https://twitch.tv/${twitchHandle}`,
   youtube: `https://www.youtube.com/@${youtubeHandle}`,
   tiktok: `https://www.tiktok.com/@${tiktokHandle}`,
+  instagram `https://www.instagram.com/soracg26/`,
 };
 
 const TIMER_MESSAGES = [
   `🔥 Quer receber avisos das lives e trocar ideia com a comunidade? Chega no Discord: ${CHAT_LINKS.discord}`,
   '📢 Dica de suporte: Vai dar aquele lurk? Mute o som clicando com o botão direito na aba do navegador. Evite mutar o player para que sua presença ajude na nossa meta de viewers! 🚀',
-  `🎬 Os melhores momentos também vão para o YouTube e TikTok! Me encontra como @${defaultHandle}.`,
+  `🎬 Os melhores momentos também vão para o YouTube, Instagram e TikTok! Me encontra como @${defaultHandle}.`,
 ];
 
 const MODERATION_PATTERNS = [
@@ -394,7 +395,7 @@ class TwitchChatBot {
         break;
       case '!redes':
       case '!links':
-        this.sendChat(`🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | TikTok: ${CHAT_LINKS.tiktok} | Discord: ${CHAT_LINKS.discord}`);
+        this.sendChat(`🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | Instagram: https://www.instagram.com/soracg26 | Discord: ${CHAT_LINKS.discord}`);
         break;
       case '!youtube':
         this.sendChat(`▶️ Se inscreve no YouTube para ver os melhores momentos: ${CHAT_LINKS.youtube}`);
@@ -417,7 +418,7 @@ class TwitchChatBot {
         this.sendChat(`🌙 ${displayName} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
         break;
       case '!comandos':
-        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
+        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao |!jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
         break;
       case '!so':
         if (trusted) await this.shoutout(args[0], userId);
