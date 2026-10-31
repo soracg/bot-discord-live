@@ -16,7 +16,7 @@ const CHAT_LINKS = {
   twitch: `https://twitch.tv/${twitchHandle}`,
   youtube: `https://www.youtube.com/@${youtubeHandle}`,
   tiktok: `https://www.tiktok.com/@${tiktokHandle}`,
-  instagram `https://www.instagram.com/soracg26/`,
+  instagram: `https://www.instagram.com/soracg26/`,
 };
 
 const TIMER_MESSAGES = [
