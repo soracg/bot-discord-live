@@ -211,7 +211,9 @@ if (DBG) { const d = document.getElementById('dbg'); d.style.display = 'block';
   setInterval(() => d.textContent = `overlay v${VER} | limite=${MAX} some=${FADE} | msgs=${list.children.length} | init=${INITS} | removidas=${REM} (ultima: ${WHY})`, 500); }
 
 function connect() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  
   ws.onmessage = ev => {
     const d = JSON.parse(ev.data);
     if (d.type === 'init') { INITS++; setSt(d.status); list.replaceChildren(); (MAX > 0 ? d.history.slice(-MAX) : d.history).forEach(add); setPin(d.pinned); }
