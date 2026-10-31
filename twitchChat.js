@@ -19,10 +19,12 @@ const CHAT_LINKS = {
   instagram: `https://www.instagram.com/soracg26/`,
 };
 
+// Mensagens automáticas intercaladas (configuradas para rotacionar no timer)
 const TIMER_MESSAGES = [
-  `🔥 Quer receber avisos das lives e trocar ideia com a comunidade? Chega no Discord: ${CHAT_LINKS.discord}`,
+  `🔥 Cola no Discord da comunidade para receber avisos das lives, trocar ideia com a tropa e ficar por dentro de tudo! ${CHAT_LINKS.discord}`,
+  `🎮 Me acompanha nas outras redes! Twitch: ${CHAT_LINKS.twitch} | YouTube: ${CHAT_LINKS.youtube} | Instagram: https://www.instagram.com/soracg26 | Discord: ${CHAT_LINKS.discord}`,
+  '🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)',
   '📢 Dica de suporte: Vai dar aquele lurk? Mute o som clicando com o botão direito na aba do navegador. Evite mutar o player para que sua presença ajude na nossa meta de viewers! 🚀',
-  `🎬 Os melhores momentos também vão para o YouTube, Instagram e TikTok! Me encontra como @${defaultHandle}.`,
 ];
 
 const MODERATION_PATTERNS = [
@@ -418,7 +420,7 @@ class TwitchChatBot {
         this.sendChat(`🌙 ${displayName} entrou no modo lurk! Valeu por fortalecer a live, fica à vontade e aproveita a gameplay!`);
         break;
       case '!comandos':
-        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao |!jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
+        this.sendChat('🤖 Comandos: !discord | !redes | !lurk | !capacete | !helicoptero | !explosao | !jogo | !youtube | !tiktok | !uptime | !pc | !so @canal (mods)');
         break;
       case '!so':
         if (trusted) await this.shoutout(args[0], userId);
@@ -451,10 +453,15 @@ class TwitchChatBot {
 
   async maybeSendTimer() {
     if (!this.isLive || !this.connected) return;
-    const interval = Math.max(5, Number(env.TWITCH_TIMER_INTERVAL_MINUTES) || 20) * 60_000;
-    const minLines = Math.max(1, Number(env.TWITCH_TIMER_MIN_LINES) || 5);
+    
+    // Se quiser garantir 30 em 30 minutos, defina TWITCH_TIMER_INTERVAL_MINUTES=30 nas variáveis de ambiente. 
+    // Caso contrário, o padrão abaixo usa 30 minutos se não houver configuração (ou o valor anterior).
+    const interval = Math.max(5, Number(env.TWITCH_TIMER_INTERVAL_MINUTES) || 30) * 60_000;
+    const minLines = Math.max(0, Number(env.TWITCH_TIMER_MIN_LINES) || 0); // Ajustado para 0 para garantir que envie mesmo se o chat estiver calmo no momento, ou mantenha se preferir
     const now = Date.now();
+    
     if (now - this.lastTimerAt < interval || this.chatLines < minLines) return;
+    
     const message = TIMER_MESSAGES[this.timerMessageIndex % TIMER_MESSAGES.length];
     if (this.sendChat(message)) {
       this.timerMessageIndex = (this.timerMessageIndex + 1) % TIMER_MESSAGES.length;
