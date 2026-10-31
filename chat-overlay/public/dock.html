@@ -1,281 +1,340 @@
-<!-- Header -->
-<header class="border-b border-gray-800 bg-twitch-card px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center space-x-3">
-        <div class="w-8 h-8 rounded-lg bg-twitch-purple flex items-center justify-center font-bold text-white shadow-lg shadow-twitch-purple/30">
-            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M11.571 4.714h1.715v5.143h-1.715zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
-        </div>
-        <div>
-            <h1 class="font-bold text-lg leading-none">Twitch Live Dashboard</h1>
-            <span class="text-xs text-green-400 font-medium inline-flex items-center gap-1 mt-1">
-                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> AO VIVO
-            </span>
-        </div>
-    </div>
-
-    <div class="flex items-center space-x-6">
-        <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
-            <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Status WS</span>
-            <span id="ws-status" class="text-xs font-bold text-yellow-500">Conectando...</span>
-        </div>
-        <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
-            <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Mensagens / min</span>
-            <span id="mpm-counter" class="text-xl font-bold text-twitch-purple">0</span>
-        </div>
-        <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
-            <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Total Geral</span>
-            <span id="total-messages" class="text-xl font-bold text-white">0</span>
-        </div>
-    </div>
-</header>
-
-<!-- Main Workspace -->
-<main class="flex-1 p-4 grid grid-cols-1 lg:grid-cols-3 gap-4 max-w-7xl mx-auto w-full">
-    
-    <!-- Left Panel: Chat List -->
-    <section class="lg:col-span-2 bg-twitch-card border border-gray-800 rounded-xl flex flex-col h-[75vh]">
-        <div class="p-3 border-b border-gray-800 flex items-center justify-between">
-            <h2 class="font-semibold text-sm text-gray-300 flex items-center gap-2">
-                <svg class="w-4 h-4 text-twitch-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                Feed do Chat em Tempo Real
-            </h2>
-            <div class="flex gap-2">
-                <button onclick="window.toggleSimulation()" id="sim-btn" class="text-xs bg-gray-800 text-gray-400 font-medium px-2.5 py-1 rounded-md transition hover:text-white">Simulador: OFF</button>
-                <button onclick="window.clearChat()" class="text-xs bg-twitch-dark hover:bg-gray-800 text-gray-400 hover:text-white px-2.5 py-1 rounded-md transition">Limpar</button>
-                <button onclick="window.toggleAutoScroll()" id="autoscroll-btn" class="text-xs bg-twitch-purple/20 text-twitch-purple font-medium px-2.5 py-1 rounded-md">Auto-Scroll: ON</button>
-            </div>
-        </div>
-
-        <!-- Chat Stream -->
-        <div id="chat-stream" class="flex-1 overflow-y-auto p-4 space-y-3">
-            <!-- Mensagens inseridas dinamicamente -->
-        </div>
-
-        <!-- Send Input -->
-        <form onsubmit="window.handleSend(event)" class="p-3 border-t border-gray-800 flex gap-2">
-            <input type="text" id="chat-input" placeholder="Enviar mensagem como Streamer na Twitch..." class="flex-1 bg-twitch-dark border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-twitch-purple transition">
-            <button type="submit" class="bg-twitch-purple hover:bg-twitch-accent text-white font-medium px-4 py-2 rounded-lg text-sm transition">Enviar</button>
-        </form>
-    </section>
-
-    <!-- Right Panel: Expanded View & Quick Actions -->
-    <section class="flex flex-col gap-4">
-        
-        <!-- Focused Message View -->
-        <div class="bg-twitch-card border border-gray-800 rounded-xl p-4 flex flex-col flex-1">
-            <h2 class="font-semibold text-sm text-gray-400 uppercase tracking-wider mb-3">Mensagem em Destaque</h2>
-            <div id="featured-card" class="bg-twitch-dark border border-gray-800 rounded-lg p-4 flex-1 flex flex-col justify-between">
-                <div>
-                    <div class="flex items-center gap-2 mb-2">
-                        <span id="feat-user" class="font-bold text-lg text-twitch-purple">@Nenhum</span>
-                        <span id="feat-badge" class="bg-twitch-purple/20 text-twitch-purple text-xs font-semibold px-2 py-0.5 rounded">MOD</span>
-                    </div>
-                    <p id="feat-text" class="text-gray-300 text-base leading-relaxed italic">Clique em qualquer mensagem do chat para destacá-la aqui com leitura ampliada.</p>
-                </div>
-                <div class="text-right text-xs text-gray-500 mt-4" id="feat-time">--:--</div>
-            </div>
-        </div>
-
-        <!-- Quick Controls -->
-        <div class="bg-twitch-card border border-gray-800 rounded-xl p-4">
-            <h2 class="font-semibold text-sm text-gray-400 uppercase tracking-wider mb-3">Ações Rápidas</h2>
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="window.sendPreset('Salve galera, bem-vindos à live!')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">👋 Mandar Salve</button>
-                <button onclick="window.sendPreset('Sigam as redes sociais! !redes')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">📢 Divulgar Redes</button>
-                <button onclick="window.sendPreset('Modo Lento Ativado (30s)')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">⏱️ Modo Lento</button>
-                <button onclick="window.sendPreset('Sub Goal: 45/50!')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">🎯 Meta de Subs</button>
-            </div>
-        </div>
-
-    </section>
-
-</main>
-
-<script>
-    let autoScroll = true;
-    let totalMsgs = 0;
-    let msgTimes = [];
-    let simulationInterval = null;
-    let isSimulating = false;
-    let ws = null;
-
-    // Conecta ao WebSocket unificado do servidor na mesma porta principal
-    function connectWebSocket() {
-        const wsStatus = document.getElementById('ws-status');
-        try {
-            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${location.host}/ws`);
-
-            ws.onopen = () => {
-                if (wsStatus) {
-                    wsStatus.textContent = 'Conectado';
-                    wsStatus.className = 'text-xs font-bold text-green-400';
-                }
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'init' && Array.isArray(data.history)) {
-                        data.history.forEach(m => {
-                            const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
-                            addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
-                        });
-                    } else if (data.type === 'chat' && data.msg) {
-                        const m = data.msg;
-                        const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
-                        addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Transmissão Twitch</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        twitch: {
+                            purple: '#9146FF',
+                            dark: '#0E0E10',
+                            card: '#18181B',
+                            hover: '#1F1F23',
+                            accent: '#772CE8'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif']
                     }
-                } catch (e) {
-                    console.error('Erro ao processar pacote WS:', e);
                 }
-            };
-
-            ws.onclose = () => {
-                if (wsStatus) {
-                    wsStatus.textContent = 'Desconectado';
-                    wsStatus.className = 'text-xs font-bold text-yellow-500';
-                }
-                setTimeout(connectWebSocket, 3000);
-            };
-
-            ws.onerror = () => {
-                ws?.close();
-            };
-
-        } catch (e) {
-            if (wsStatus) {
-                wsStatus.textContent = 'Modo Offline';
-                wsStatus.className = 'text-xs font-bold text-gray-500';
             }
         }
-    }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0E0E10; }
+        ::-webkit-scrollbar-thumb { background: #2D2D35; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9146FF; }
+    </style>
+</head>
+<body class="bg-twitch-dark text-gray-100 min-h-screen flex flex-col">
 
-    const randomUsers = [
-        { name: 'GamerPro99', color: '#3B82F6', badge: 'VIP' },
-        { name: 'StreamFan_01', color: '#10B981', badge: 'SUB' },
-        { name: 'PixelKing', color: '#F59E0B', badge: 'MOD' },
-        { name: 'ShadowNinja', color: '#EC4899', badge: 'VIEWER' },
-        { name: 'TwitchRival', color: '#9146FF', badge: 'SUB' }
-    ];
-
-    const sampleMessages = [
-        'Boa noite! A live tá insana hoje! 🚀',
-        'Qual o jogo de amanhã?',
-        'GG WP!! Jogou demais nessa partida.',
-        'Manda um salve pro pessoal de SP!',
-        'Mandou muito bem nessa jogada!',
-        'Alguém sabe o comando do Discord?'
-    ];
-
-    function addMessage(username, color, badge, text, time = new Date()) {
-        totalMsgs++;
-        const totalEl = document.getElementById('total-messages');
-        if (totalEl) totalEl.textContent = totalMsgs;
-        
-        const now = Date.now();
-        msgTimes.push(now);
-        msgTimes = msgTimes.filter(t => now - t <= 60000);
-        const mpmEl = document.getElementById('mpm-counter');
-        if (mpmEl) mpmEl.textContent = msgTimes.length;
-
-        const timeStr = time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        
-        const stream = document.getElementById('chat-stream');
-        if (!stream) return;
-
-        const row = document.createElement('div');
-        row.className = 'flex items-start justify-between bg-twitch-dark/60 hover:bg-twitch-hover p-2.5 rounded-lg cursor-pointer transition border border-transparent hover:border-gray-800 group';
-        
-        row.onclick = () => window.highlightMessage(username, badge, text, timeStr);
-
-        row.innerHTML = `
-            <div class="flex items-start space-x-2 min-w-0 pr-2">
-                <span class="text-xs text-gray-500 pt-0.5">${timeStr}</span>
-                <span class="text-xs bg-twitch-purple/10 text-twitch-purple font-semibold px-1.5 py-0.5 rounded uppercase">${badge}</span>
-                <span class="font-bold text-sm" style="color: ${color}">${username}:</span>
-                <span class="text-sm text-gray-200 break-words">${text}</span>
+    <!-- Header -->
+    <header class="border-b border-gray-800 bg-twitch-card px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 rounded-lg bg-twitch-purple flex items-center justify-center font-bold text-white shadow-lg shadow-twitch-purple/30">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M11.571 4.714h1.715v5.143h-1.715zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
             </div>
-            <button onclick="event.stopPropagation(); this.closest('.flex').remove();" class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs px-2 transition">✕</button>
-        `;
+            <div>
+                <h1 class="font-bold text-lg leading-none">Twitch Live Dashboard</h1>
+                <span class="text-xs text-green-400 font-medium inline-flex items-center gap-1 mt-1">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> AO VIVO
+                </span>
+            </div>
+        </div>
 
-        stream.appendChild(row);
+        <div class="flex items-center space-x-6">
+            <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
+                <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Status WS</span>
+                <span id="ws-status" class="text-xs font-bold text-yellow-500">Conectando...</span>
+            </div>
+            <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
+                <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Mensagens / min</span>
+                <span id="mpm-counter" class="text-xl font-bold text-twitch-purple">0</span>
+            </div>
+            <div class="bg-twitch-dark border border-gray-800 px-3 py-1.5 rounded-lg text-center">
+                <span class="text-xs text-gray-400 block uppercase tracking-wider font-semibold">Total Geral</span>
+                <span id="total-messages" class="text-xl font-bold text-white">0</span>
+            </div>
+        </div>
+    </header>
 
-        if (autoScroll) {
-            stream.scrollTop = stream.scrollHeight;
+    <!-- Main Workspace -->
+    <main class="flex-1 p-4 grid grid-cols-1 lg:grid-cols-3 gap-4 max-w-7xl mx-auto w-full">
+        
+        <!-- Left Panel: Chat List -->
+        <section class="lg:col-span-2 bg-twitch-card border border-gray-800 rounded-xl flex flex-col h-[75vh]">
+            <div class="p-3 border-b border-gray-800 flex items-center justify-between">
+                <h2 class="font-semibold text-sm text-gray-300 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-twitch-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                    Feed do Chat em Tempo Real
+                </h2>
+                <div class="flex gap-2">
+                    <button onclick="window.toggleSimulation()" id="sim-btn" class="text-xs bg-gray-800 text-gray-400 font-medium px-2.5 py-1 rounded-md transition hover:text-white">Simulador: OFF</button>
+                    <button onclick="window.clearChat()" class="text-xs bg-twitch-dark hover:bg-gray-800 text-gray-400 hover:text-white px-2.5 py-1 rounded-md transition">Limpar</button>
+                    <button onclick="window.toggleAutoScroll()" id="autoscroll-btn" class="text-xs bg-twitch-purple/20 text-twitch-purple font-medium px-2.5 py-1 rounded-md">Auto-Scroll: ON</button>
+                </div>
+            </div>
+
+            <!-- Chat Stream -->
+            <div id="chat-stream" class="flex-1 overflow-y-auto p-4 space-y-3">
+                <!-- Mensagens inseridas dinamicamente -->
+            </div>
+
+            <!-- Send Input -->
+            <form onsubmit="window.handleSend(event)" class="p-3 border-t border-gray-800 flex gap-2">
+                <input type="text" id="chat-input" placeholder="Enviar mensagem como Streamer na Twitch..." class="flex-1 bg-twitch-dark border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-twitch-purple transition">
+                <button type="submit" class="bg-twitch-purple hover:bg-twitch-accent text-white font-medium px-4 py-2 rounded-lg text-sm transition">Enviar</button>
+            </form>
+        </section>
+
+        <!-- Right Panel: Expanded View & Quick Actions -->
+        <section class="flex flex-col gap-4">
+            
+            <!-- Focused Message View -->
+            <div class="bg-twitch-card border border-gray-800 rounded-xl p-4 flex flex-col flex-1">
+                <h2 class="font-semibold text-sm text-gray-400 uppercase tracking-wider mb-3">Mensagem em Destaque</h2>
+                <div id="featured-card" class="bg-twitch-dark border border-gray-800 rounded-lg p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span id="feat-user" class="font-bold text-lg text-twitch-purple">@Nenhum</span>
+                            <span id="feat-badge" class="bg-twitch-purple/20 text-twitch-purple text-xs font-semibold px-2 py-0.5 rounded">MOD</span>
+                        </div>
+                        <p id="feat-text" class="text-gray-300 text-base leading-relaxed italic">Clique em qualquer mensagem do chat para destacá-la aqui com leitura ampliada.</p>
+                    </div>
+                    <div class="text-right text-xs text-gray-500 mt-4" id="feat-time">--:--</div>
+                </div>
+            </div>
+
+            <!-- Quick Controls -->
+            <div class="bg-twitch-card border border-gray-800 rounded-xl p-4">
+                <h2 class="font-semibold text-sm text-gray-400 uppercase tracking-wider mb-3">Ações Rápidas</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="window.sendPreset('Salve galera, bem-vindos à live!')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">👋 Mandar Salve</button>
+                    <button onclick="window.sendPreset('Sigam as redes sociais! !redes')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">📢 Divulgar Redes</button>
+                    <button onclick="window.sendPreset('Modo Lento Ativado (30s)')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">⏱️ Modo Lento</button>
+                    <button onclick="window.sendPreset('Sub Goal: 45/50!')" class="bg-twitch-dark hover:bg-twitch-hover text-left p-2.5 rounded-lg text-xs font-medium border border-gray-800 hover:border-gray-700 transition">🎯 Meta de Subs</button>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script>
+        let autoScroll = true;
+        let totalMsgs = 0;
+        let msgTimes = [];
+        let simulationInterval = null;
+        let isSimulating = false;
+        let ws = null;
+        let dockWs = null;
+
+        // Conecta ao WebSocket do servidor principal (server.js) e do bot (twitchChat_3.js)
+        function connectWebSocket() {
+            const wsStatus = document.getElementById('ws-status');
+            try {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = location.hostname || 'localhost';
+                const port = location.port || '3000';
+
+                // WebSocket principal do servidor (para ler histórico e status)
+                ws = new WebSocket(`${protocol}//${host}:${port}/ws`);
+
+                ws.onopen = () => {
+                    if (wsStatus) {
+                        wsStatus.textContent = 'Conectado';
+                        wsStatus.className = 'text-xs font-bold text-green-400';
+                    }
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'init' && Array.isArray(data.history)) {
+                            data.history.forEach(m => {
+                                const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
+                                addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
+                            });
+                        } else if (data.type === 'chat' && data.msg) {
+                            const m = data.msg;
+                            const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
+                            addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
+                        }
+                    } catch (e) {
+                        console.error('Erro ao processar pacote WS:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    if (wsStatus) {
+                        wsStatus.textContent = 'Desconectado';
+                        wsStatus.className = 'text-xs font-bold text-yellow-500';
+                    }
+                    setTimeout(connectWebSocket, 3000);
+                };
+
+                ws.onerror = () => {
+                    ws?.close();
+                };
+
+                // Conexão direta com o controle do bot (porta 8080) para disparo de mensagens reais na Twitch
+                connectDockControl(host);
+
+            } catch (e) {
+                if (wsStatus) {
+                    wsStatus.textContent = 'Modo Offline';
+                    wsStatus.className = 'text-xs font-bold text-gray-500';
+                }
+            }
         }
-    }
 
-    window.highlightMessage = function(user, badge, text, time) {
-        const u = document.getElementById('feat-user');
-        const b = document.getElementById('feat-badge');
-        const t = document.getElementById('feat-text');
-        const tm = document.getElementById('feat-time');
-        if (u) u.textContent = '@' + user;
-        if (b) b.textContent = badge;
-        if (t) t.textContent = `"${text}"`;
-        if (tm) tm.textContent = time;
-    };
-
-    window.dispatchChatMessage = function(text) {
-        if (!text) return;
-        // Envia a mensagem através do WebSocket unificado ativo
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'send_chat', message: text }));
+        function connectDockControl(host) {
+            try {
+                dockWs = new WebSocket(`ws://${host}:8080`);
+                dockWs.onopen = () => console.log('[dock] Conectado ao servidor de envio da Twitch na porta 8080');
+                dockWs.onclose = () => setTimeout(() => connectDockControl(host), 5000);
+            } catch (e) {}
         }
-    };
 
-    window.handleSend = function(e) {
-        e.preventDefault();
-        const input = document.getElementById('chat-input');
-        const message = input.value.trim();
-        if (!message) return;
+        const randomUsers = [
+            { name: 'GamerPro99', color: '#3B82F6', badge: 'VIP' },
+            { name: 'StreamFan_01', color: '#10B981', badge: 'SUB' },
+            { name: 'PixelKing', color: '#F59E0B', badge: 'MOD' },
+            { name: 'ShadowNinja', color: '#EC4899', badge: 'VIEWER' },
+            { name: 'TwitchRival', color: '#9146FF', badge: 'SUB' }
+        ];
 
-        window.dispatchChatMessage(message);
-        addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', message);
-        input.value = '';
-    };
+        const sampleMessages = [
+            'Boa noite! A live tá insana hoje! 🚀',
+            'Qual o jogo de amanhã?',
+            'GG WP!! Jogou demais nessa partida.',
+            'Manda um salve pro pessoal de SP!',
+            'Mandou muito bem nessa jogada!',
+            'Alguém sabe o comando do Discord?'
+        ];
 
-    window.sendPreset = function(text) {
-        window.dispatchChatMessage(text);
-        addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', text);
-    };
+        function addMessage(username, color, badge, text, time = new Date()) {
+            totalMsgs++;
+            const totalEl = document.getElementById('total-messages');
+            if (totalEl) totalEl.textContent = totalMsgs;
+            
+            const now = Date.now();
+            msgTimes.push(now);
+            msgTimes = msgTimes.filter(t => now - t <= 60000);
+            const mpmEl = document.getElementById('mpm-counter');
+            if (mpmEl) mpmEl.textContent = msgTimes.length;
 
-    window.clearChat = function() {
-        const stream = document.getElementById('chat-stream');
-        if (stream) stream.innerHTML = '';
-    };
+            const timeStr = time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            
+            const stream = document.getElementById('chat-stream');
+            if (!stream) return;
 
-    window.toggleAutoScroll = function() {
-        autoScroll = !autoScroll;
-        const btn = document.getElementById('autoscroll-btn');
-        if (btn) {
-            btn.textContent = `Auto-Scroll: ${autoScroll ? 'ON' : 'OFF'}`;
-            btn.className = `text-xs font-medium px-2.5 py-1 rounded-md ${autoScroll ? 'bg-twitch-purple/20 text-twitch-purple' : 'bg-gray-800 text-gray-400'}`;
+            const row = document.createElement('div');
+            row.className = 'flex items-start justify-between bg-twitch-dark/60 hover:bg-twitch-hover p-2.5 rounded-lg cursor-pointer transition border border-transparent hover:border-gray-800 group';
+            
+            row.onclick = () => window.highlightMessage(username, badge, text, timeStr);
+
+            row.innerHTML = `
+                <div class="flex items-start space-x-2 min-w-0 pr-2">
+                    <span class="text-xs text-gray-500 pt-0.5">${timeStr}</span>
+                    <span class="text-xs bg-twitch-purple/10 text-twitch-purple font-semibold px-1.5 py-0.5 rounded uppercase">${badge}</span>
+                    <span class="font-bold text-sm" style="color: ${color}">${username}:</span>
+                    <span class="text-sm text-gray-200 break-words">${text}</span>
+                </div>
+                <button onclick="event.stopPropagation(); this.closest('.flex').remove();" class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs px-2 transition">✕</button>
+            `;
+
+            stream.appendChild(row);
+
+            if (autoScroll) {
+                stream.scrollTop = stream.scrollHeight;
+            }
         }
-    };
 
-    window.toggleSimulation = function() {
-        isSimulating = !isSimulating;
-        const btn = document.getElementById('sim-btn');
-        if (!btn) return;
-        if (isSimulating) {
-            btn.textContent = 'Simulador: ON';
-            btn.className = 'text-xs bg-green-500/20 text-green-400 font-medium px-2.5 py-1 rounded-md transition';
-            simulationInterval = setInterval(() => {
-                const user = randomUsers[Math.floor(Math.random() * randomUsers.length)];
-                const text = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
-                addMessage(user.name, user.color, user.badge, text);
-            }, 3500);
-        } else {
-            btn.textContent = 'Simulador: OFF';
-            btn.className = 'text-xs bg-gray-800 text-gray-400 font-medium px-2.5 py-1 rounded-md transition hover:text-white';
-            clearInterval(simulationInterval);
-        }
-    };
+        window.highlightMessage = function(user, badge, text, time) {
+            const u = document.getElementById('feat-user');
+            const b = document.getElementById('feat-badge');
+            const t = document.getElementById('feat-text');
+            const tm = document.getElementById('feat-time');
+            if (u) u.textContent = '@' + user;
+            if (b) b.textContent = badge;
+            if (t) t.textContent = `"${text}"`;
+            if (tm) tm.textContent = time;
+        };
 
-    // Inicia conexão WebSocket no carregamento da página
-    connectWebSocket();
+        window.dispatchChatMessage = function(text) {
+            if (!text) return;
+            // Tenta enviar via controle do bot Twitch (porta 8080)
+            if (dockWs && dockWs.readyState === WebSocket.OPEN) {
+                dockWs.send(JSON.stringify({ type: 'send_chat', message: text }));
+            } else if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'send', text: text }));
+            }
+        };
 
-    // Mensagem inicial de boas-vindas
-    addMessage('ModBot', '#EF4444', 'BOT', 'Painel pronto e conectado ao Render!');
-</script>
+        window.handleSend = function(e) {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            window.dispatchChatMessage(message);
+            addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', message);
+            input.value = '';
+        };
+
+        window.sendPreset = function(text) {
+            window.dispatchChatMessage(text);
+            addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', text);
+        };
+
+        window.clearChat = function() {
+            const stream = document.getElementById('chat-stream');
+            if (stream) stream.innerHTML = '';
+        };
+
+        window.toggleAutoScroll = function() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('autoscroll-btn');
+            if (btn) {
+                btn.textContent = `Auto-Scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+                btn.className = `text-xs font-medium px-2.5 py-1 rounded-md ${autoScroll ? 'bg-twitch-purple/20 text-twitch-purple' : 'bg-gray-800 text-gray-400'}`;
+            }
+        };
+
+        window.toggleSimulation = function() {
+            isSimulating = !isSimulating;
+            const btn = document.getElementById('sim-btn');
+            if (!btn) return;
+            if (isSimulating) {
+                btn.textContent = 'Simulador: ON';
+                btn.className = 'text-xs bg-green-500/20 text-green-400 font-medium px-2.5 py-1 rounded-md transition';
+                simulationInterval = setInterval(() => {
+                    const user = randomUsers[Math.floor(Math.random() * randomUsers.length)];
+                    const text = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+                    addMessage(user.name, user.color, user.badge, text);
+                }, 3500);
+            } else {
+                btn.textContent = 'Simulador: OFF';
+                btn.className = 'text-xs bg-gray-800 text-gray-400 font-medium px-2.5 py-1 rounded-md transition hover:text-white';
+                clearInterval(simulationInterval);
+            }
+        };
+
+        // Inicia conexão WebSocket no carregamento da página
+        connectWebSocket();
+
+        // Mensagem inicial de boas-vindas
+        addMessage('ModBot', '#EF4444', 'BOT', 'Painel pronto e integrado ao bot da Twitch!');
+    </script>
+</body>
+</html>
