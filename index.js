@@ -18,6 +18,7 @@ const squad = require('./squad');
 const { state, save } = require('./store');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
+const instagram = require('./instagramStory');
 const xp = require('./xp');
 const voiceRooms = require('./voiceRooms');
 const http = require('http');
@@ -77,6 +78,10 @@ const commands = [
     .setName('livetest')
     .setDescription('Mostra um exemplo do aviso de live (apaga em 20s)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+  new SlashCommandBuilder()
+    .setName('storytest')
+    .setDescription('Posta o story de live no Instagram agora (teste; publica de verdade)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('loja')
     .setDescription('Troque seu XP por recompensas exclusivas'),
@@ -299,6 +304,16 @@ client.on(Events.InteractionCreate, async (i) => {
         case 'livetest': {
           const ok = await notifier.sendTest(client);
           return i.reply({ content: ok ? 'Exemplo enviado.' : 'Rode /setup primeiro.', flags: EPHEMERAL });
+        }
+        case 'storytest': {
+          await i.deferReply({ flags: EPHEMERAL });
+          const r = await instagram.postLiveStory({ force: true });
+          const msg = r.ok
+            ? `Story publicado no Instagram (id ${r.id}).`
+            : r.reason === 'config'
+              ? 'Faltam IG_USER_ID, IG_TOKEN ou IG_STORY_IMAGE_URL no ambiente.'
+              : `Não consegui postar: ${r.error ?? r.reason}`;
+          return i.editReply({ content: msg });
         }
         case 'loja': {
           return loja.execute(client, i);
