@@ -138,71 +138,41 @@
         let ws = null;
         let dockWs = null;
 
-        // Conecta ao WebSocket do servidor principal (server.js) e do bot (twitchChat_3.js)
-        function connectWebSocket() {
-            const wsStatus = document.getElementById('ws-status');
-            try {
-                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = location.hostname || 'localhost';
-                const port = location.port || '3000';
-
-                // WebSocket principal do servidor (para ler histórico e status)
-                ws = new WebSocket(`${protocol}//${host}:${port}/ws`);
-
-                ws.onopen = () => {
-                    if (wsStatus) {
-                        wsStatus.textContent = 'Conectado';
-                        wsStatus.className = 'text-xs font-bold text-green-400';
-                    }
-                };
-
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'init' && Array.isArray(data.history)) {
-                            data.history.forEach(m => {
-                                const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
-                                addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
-                            });
-                        } else if (data.type === 'chat' && data.msg) {
-                            const m = data.msg;
-                            const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
-                            addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
-                        }
-                    } catch (e) {
-                        console.error('Erro ao processar pacote WS:', e);
-                    }
-                };
-
-                ws.onclose = () => {
-                    if (wsStatus) {
-                        wsStatus.textContent = 'Desconectado';
-                        wsStatus.className = 'text-xs font-bold text-yellow-500';
-                    }
-                    setTimeout(connectWebSocket, 3000);
-                };
-
-                ws.onerror = () => {
-                    ws?.close();
-                };
-
-                // Conexão direta com o controle do bot (porta 8080) para disparo de mensagens reais na Twitch
-                connectDockControl(host);
-
-            } catch (e) {
-                if (wsStatus) {
-                    wsStatus.textContent = 'Modo Offline';
-                    wsStatus.className = 'text-xs font-bold text-gray-500';
-                }
-            }
+        // Um unico WebSocket (/ws) le o chat E envia comandos. Na nuvem abra o painel com ?key=SUA_CHAVE
+        const DOCK_KEY = new URLSearchParams(location.search).get('key') || '';
+        function setWsStatus(text, cls) {
+            const el = document.getElementById('ws-status');
+            if (el) { el.textContent = text; el.className = 'text-xs font-bold ' + cls; }
         }
 
-        function connectDockControl(host) {
-            try {
-                dockWs = new WebSocket(`ws://${host}:8080`);
-                dockWs.onopen = () => console.log('[dock] Conectado ao servidor de envio da Twitch na porta 8080');
-                dockWs.onclose = () => setTimeout(() => connectDockControl(host), 5000);
-            } catch (e) {}
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${protocol}//${location.host}/ws` + (DOCK_KEY ? `?key=${encodeURIComponent(DOCK_KEY)}` : '');
+            try { ws = new WebSocket(url); } catch (e) { setWsStatus('Modo Offline', 'text-gray-500'); return; }
+
+            ws.onopen = () => setWsStatus('Conectado', 'text-green-400');
+
+            ws.onmessage = (event) => {
+                let data;
+                try { data = JSON.parse(event.data); } catch (e) { return; }
+                if (data.type === 'init' && Array.isArray(data.history)) {
+                    data.history.forEach(m => {
+                        const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
+                        addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
+                    });
+                } else if (data.type === 'chat' && data.msg) {
+                    const m = data.msg;
+                    const text = m.parts ? m.parts.map(p => p.v || p.alt || '').join('') : (m.text || '');
+                    addMessage(m.user || 'Anon', m.color || '#9146FF', (m.badges && m.badges[0]) || 'CHAT', text, new Date(m.ts || Date.now()));
+                } else if (data.type === 'auth') {
+                    if (!data.control) setWsStatus('Somente leitura (falta ?key=)', 'text-yellow-500');
+                } else if (data.type === 'sent' && !data.ok) {
+                    addMessage('Sistema', '#EF4444', 'ERRO', 'Não enviou: ' + (data.error || 'erro desconhecido'));
+                }
+            };
+
+            ws.onclose = () => { setWsStatus('Desconectado', 'text-yellow-500'); setTimeout(connectWebSocket, 3000); };
+            ws.onerror = () => { try { ws.close(); } catch (e) {} };
         }
 
         const randomUsers = [
@@ -272,13 +242,13 @@
         };
 
         window.dispatchChatMessage = function(text) {
-            if (!text) return;
-            // Tenta enviar via controle do bot Twitch (porta 8080)
-            if (dockWs && dockWs.readyState === WebSocket.OPEN) {
-                dockWs.send(JSON.stringify({ type: 'send_chat', message: text }));
-            } else if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'send', text: text }));
+            if (!text) return false;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'send_chat', message: text }));
+                return true;
             }
+            addMessage('Sistema', '#EF4444', 'ERRO', 'Sem conexão com o servidor — mensagem não enviada.');
+            return false;
         };
 
         window.handleSend = function(e) {
@@ -287,14 +257,12 @@
             const message = input.value.trim();
             if (!message) return;
 
-            window.dispatchChatMessage(message);
-            addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', message);
+            if (window.dispatchChatMessage(message)) addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', message);
             input.value = '';
         };
 
         window.sendPreset = function(text) {
-            window.dispatchChatMessage(text);
-            addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', text);
+            if (window.dispatchChatMessage(text)) addMessage('Streamer (Você)', '#9146FF', 'BROADCASTER', text);
         };
 
         window.clearChat = function() {

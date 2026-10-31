@@ -119,7 +119,7 @@
   }
 
   function conecta() {
-    const ws = new WebSocket('ws://' + location.host + '/ws');
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
     ws.onmessage = e => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === 'event') mostra(m.ev);   // historico do init e ignorado de proposito
