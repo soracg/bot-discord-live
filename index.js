@@ -309,11 +309,15 @@ client.on(Events.InteractionCreate, async (i) => {
         case 'storytest': {
           await i.deferReply({ flags: EPHEMERAL });
           const r = await instagram.postLiveStory({ force: true, game: i.options.getString('jogo') });
-          const msg = r.ok
-            ? `Story publicado no Instagram (imagem: ${r.matched ?? 'padrão'}).`
-            : r.reason === 'config'
-              ? 'Faltam IG_USER_ID, IG_TOKEN ou IG_STORY_IMAGE_URL no ambiente.'
-              : `Não consegui postar: ${r.error ?? r.reason}`;
+          let msg;
+          if (r.reason === 'config') {
+            msg = 'Faltam IG_USER_ID, IG_TOKEN ou uma imagem (IG_STORY_IMAGE_URL / IG_STORY_IMAGES) no ambiente.';
+          } else {
+            const lines = (r.results ?? []).map(
+              (x) => `• conta ...${String(x.account).slice(-4)}: ${x.ok ? 'publicado' : `erro: ${x.error}`}`,
+            );
+            msg = `Imagem: ${r.matched ?? 'padrão'}\n${lines.join('\n')}`;
+          }
           return i.editReply({ content: msg });
         }
         case 'loja': {
