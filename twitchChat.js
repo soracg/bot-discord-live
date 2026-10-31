@@ -143,9 +143,11 @@ class TwitchChatBot {
 
   // Abre um servidor WebSocket local para o painel HTML conseguir enviar mensagens de chat
   startControlServer() {
+    if (String(env.TWITCH_DOCK_PORT).toLowerCase() === 'off') return;   // na nuvem o painel usa o /ws do servidor principal
     const port = Number(env.TWITCH_DOCK_PORT || 8080);
     try {
       this.wss = new WebSocket.Server({ port });
+      this.wss.on('error', e => console.error('[twitch-chat] porta de controle do painel indisponivel (' + e.code + ') - ignorando'));
       console.log(`[twitch-chat] Servidor WebSocket de controle para o painel ouvindo na porta ${port}`);
 
       this.wss.on('connection', (socket) => {
@@ -277,7 +279,7 @@ class TwitchChatBot {
         this.connecting = false;
         this.reconnectDelay = 3000;
         const cleanToken = String(token).replace(/^oauth:/i, '');
-        ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
+        ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');   // sem membership: nao precisamos de JOIN/PART dos viewers
         ws.send(`PASS oauth:${cleanToken}`);
         ws.send(`NICK ${this.chatUsername}`);
         ws.send(`JOIN #${this.channelLogin}`);
@@ -314,11 +316,15 @@ class TwitchChatBot {
         this.sendRaw(line.replace(/^PING/, 'PONG'));
         continue;
       }
-      if (line.includes(' 001 ') || line.includes(' JOIN #')) {
-        this.connected = true;
-        console.log(`[twitch-chat] conectado e pronto no chat #${this.channelLogin}`);
+      // Antes: qualquer ' JOIN #' (de QUALQUER viewer, por causa do CAP membership) marcava "conectado" e logava.
+      if (line.includes(' 001 ') || this.isOwnJoin(line)) {
+        if (!this.connected) {
+          this.connected = true;
+          console.log(`[twitch-chat] conectado e pronto no chat #${this.channelLogin}`);
+        }
         continue;
       }
+      if (line.includes(' JOIN #') || line.includes(' PART #')) continue;   // entradas/saidas de outros usuarios: ignorar
 
       if (line.includes('PRIVMSG')) {
         try {
@@ -338,6 +344,11 @@ class TwitchChatBot {
         } catch (e) {}
       }
     }
+  }
+
+  isOwnJoin(line) {
+    const m = line.replace(/^@\S+ /, '').match(/^:([^!\s]+)![^ ]* JOIN #/);
+    return !!m && m[1].toLowerCase() === String(this.chatUsername || '').toLowerCase();
   }
 
   sendRaw(line) {

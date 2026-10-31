@@ -308,7 +308,9 @@ client.on(Events.InteractionCreate, async (i) => {
         }
         case 'storytest': {
           await i.deferReply({ flags: EPHEMERAL });
+          console.log(`[storytest] pedido por ${i.user.tag}${i.options.getString('jogo') ? ' (jogo: ' + i.options.getString('jogo') + ')' : ''}`);
           const r = await instagram.postLiveStory({ force: true, game: i.options.getString('jogo') });
+          console.log(`[storytest] concluido: ${r.ok ? 'OK' : 'FALHOU (' + (r.reason || r.error || 'erro') + ')'}`);
           let msg;
           if (r.reason === 'config') {
             msg = 'Faltam IG_USER_ID, IG_TOKEN ou uma imagem (IG_STORY_IMAGE_URL / IG_STORY_IMAGES) no ambiente.';
@@ -407,12 +409,17 @@ client.on(Events.InteractionCreate, async (i) => {
   }
 });
 
-// Servidor HTTP posicionado corretamente no escopo principal para o Render
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot Discord Live ativo e operando!\n');
-}).listen(PORT, () => {
-  console.log(`[web] Servidor HTTP ouvindo na porta ${PORT}`);
-});
+// Overlay + painel + WebSocket + hub de eventos no MESMO processo e porta (Render).
+// O overlay reaproveita a instancia da Twitch deste bot (global.twitchBotInstance): nada de Twitch/Discord em duplicidade.
+// Se o overlay nao carregar, cai no servidor simples de saude para o Render nao derrubar o servico.
+try {
+  require('./chat-overlay/server.js');
+} catch (e) {
+  console.error('[overlay] nao carregou:', e.message);
+  http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot Discord Live ativo e operando!\n');
+  }).listen(PORT, () => console.log(`[web] Servidor HTTP ouvindo na porta ${PORT}`));
+}
 
-client.login(DISCORD_TOKEN);
+client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] login falhou:', e.message));

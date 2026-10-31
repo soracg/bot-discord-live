@@ -197,11 +197,17 @@ async function postOne(acc, image) {
 async function postLiveStory({ force = false, game } = {}) {
   const list = accounts();
   const image = pickImage(game);
-  if (!list.length || !image.url) return { ok: false, reason: 'config' };
+  const origem = force ? 'manual (/storytest)' : 'automatico (live comecou)';
+  console.log(`[IG] pedido de story: ${origem}${game ? ', jogo: ' + game : ''}`);
+  if (!list.length || !image.url) {
+    console.warn(`[IG] story NAO enviado: ${!list.length ? 'sem contas (IG_ACCOUNTS ou IG_USER_ID + IG_TOKEN)' : ''}${!list.length && !image.url ? ' e ' : ''}${!image.url ? 'sem imagem (IG_STORY_IMAGE_URL / IG_STORY_IMAGES)' : ''}`);
+    return { ok: false, reason: 'config' };
+  }
 
   const cooldownMs = Number(process.env.IG_STORY_COOLDOWN_H || 4) * 3600 * 1000;
   if (!force && Date.now() - (state.igStoryAt ?? 0) < cooldownMs) {
-    console.log('[IG] story recente, ignorando');
+    const falta = Math.max(0, cooldownMs - (Date.now() - (state.igStoryAt ?? 0)));
+    console.log(`[IG] story recente, ignorando (cooldown de ${Number(process.env.IG_STORY_COOLDOWN_H || 4)}h; faltam ~${Math.ceil(falta / 60000)} min)`);
     return { ok: false, reason: 'cooldown' };
   }
   // marca antes de postar para nao duplicar se houver duas chamadas seguidas
@@ -210,6 +216,7 @@ async function postLiveStory({ force = false, game } = {}) {
     save();
   }
 
+  console.log(`[IG] enviando para ${list.length} conta(s), imagem: ${image.matched ?? 'padrao'}`);
   const results = [];
   for (const acc of list) {
     try {
@@ -223,6 +230,7 @@ async function postLiveStory({ force = false, game } = {}) {
   }
 
   const ok = results.some((r) => r.ok);
+  console.log(`[IG] resultado: ${results.filter((r) => r.ok).length}/${results.length} conta(s) publicada(s)${ok ? '' : ' - FALHOU em todas'}`);
   if (!ok && !force) {
     state.igStoryAt = 0; // falhou em todas: permite tentar de novo
     save();

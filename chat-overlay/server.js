@@ -4,33 +4,8 @@ const path = require('path');
 const WebSocket = require('ws');
 const twitchChatBot = require('./twitchChat_3'); // Importa o bot autenticado da Twitch com suporte a envio via WebSocket
 
-// --- DEPENDÊNCIAS DO DISCORD ---
-require('dotenv').config();
-const {
-  Client,
-  Events,
-  GatewayIntentBits,
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  ActionRowBuilder,
-  EmbedBuilder,
-  MessageFlags,
-  ChannelType,
-} = require('discord.js');
-const cfgDiscord = require('./config');
-const squad = require('./squad');
-const { state, save } = require('./store');
-const { runSetup, upsertMessage, agendaPayload } = require('./setup');
-const notifier = require('./notifier');
-const instagram = require('./instagramStory');
-const xp = require('./xp');
-const voiceRooms = require('./voiceRooms');
-const backup = require('./backup');
-const sorteio = require('./sorteio');
-const loja = require('./loja');
+try { require('dotenv').config(); } catch (e) {}
+const STANDALONE = require.main === module;   // true: `node chat-overlay/server.js`; false: carregado pelo index.js (bot completo)
 
 process.on('uncaughtException', e => console.log('[erro]', e && e.message));
 process.on('unhandledRejection', e => console.log('[erro]', e && e.message ? e.message : e));
@@ -45,7 +20,8 @@ const status = { twitch: false, youtube: false, kick: false };
 let pinned = null;
 const seen = new Set();
 const DOCK_KEY = process.env.DOCK_KEY || '';          // senha do painel na nuvem (defina no Render)
-let twitchBot = null;                                  // instancia do bot autenticado (envia no chat)
+let twitchBot = null;
+const getBot = () => global.twitchBotInstance || twitchBot;                                  // instancia do bot autenticado (envia no chat)
 const isLoopback = req => /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || '') && !req.headers['x-forwarded-for'];
 const keyOk = k => !!DOCK_KEY && typeof k === 'string' && k.length === DOCK_KEY.length && require('crypto').timingSafeEqual(Buffer.from(k), Buffer.from(DOCK_KEY));
 
@@ -54,7 +30,7 @@ const server = http.createServer((req, res) => {
   if (pth === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
   if (pth === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ ...status, botTwitchConectado: !!(twitchBot && twitchBot.connected), clientesWS: wss.clients.size, mensagensNaMemoria: history.length, painelProtegidoPorChave: !!DOCK_KEY }));
+    return res.end(JSON.stringify({ ...status, botTwitchConectado: !!(getBot() && getBot().connected), clientesWS: wss.clients.size, mensagensNaMemoria: history.length, painelProtegidoPorChave: !!DOCK_KEY }));
   }
   if (hubHttp(req, res)) return;
   const url = req.url.split('?')[0];
@@ -92,7 +68,7 @@ wss.on('connection', (ws, req) => {
     else if (m.type === 'clear') broadcast({ type: 'clear' });
     else if ((m.type === 'send_chat' && m.message) || (m.type === 'send' && m.text)) {
       const txt = String(m.message || m.text).trim().slice(0, 480);
-      const ok = !!(txt && twitchBot && twitchBot.sendChat(txt));
+      const ok = !!(txt && getBot() && getBot().sendChat(txt));
       console.log(ok ? '[dock] enviado ao chat: ' + txt : '[dock] NAO enviou (bot da Twitch desconectado ou sem token): ' + txt);
       send(ws, { type: 'sent', ok, error: ok ? null : 'o bot da Twitch nao esta conectado/autenticado (veja [twitch-chat] no log do Render)' });
     }
@@ -870,130 +846,10 @@ server.listen(PORT, () => {
   console.log(`  Replay   (OBS Browser Source): http://localhost:${PORT}/replay\n`);
 
   // Inicia os serviços unificados na porta correta
-  twitchBot = twitchChatBot.start();
+  if (STANDALONE) twitchBot = twitchChatBot.start();   // integrado: usa o bot do index.js (global.twitchBotInstance)
   startTwitch();
   startYouTube();
   startKick();
   startStreamlabs();
   startObs();
 });
-
-
-// =====================================================================
-//  INICIALIZAÇÃO DO BOT DO DISCORD (Integrado ao mesmo Render)
-// =====================================================================
-const { DISCORD_TOKEN, GUILD_ID } = process.env;
-if (!DISCORD_TOKEN || !GUILD_ID) {
-  console.warn('⚠️ Aviso: Faltou DISCORD_TOKEN ou GUILD_ID no ambiente do Render. O bot do Discord ficará offline.');
-} else {
-  const discordClient = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.GuildVoiceStates,
-      GatewayIntentBits.MessageContent,
-    ],
-  });
-
-  global.discordClient = discordClient;
-
-  const LIVE_CHAT_CHANNEL_ID = '1558245625760583760';
-  const HONEYPOT_CHANNEL_ID = '1561805357339377804';
-  const TICKET_CHANNEL_ID = '1558749685555142717';
-
-  const EPHEMERAL = MessageFlags.Ephemeral;
-  const NO_PING = { parse: [] };
-
-  const commands = [
-    new SlashCommandBuilder().setName('setup').setDescription('Cria/atualiza cargos, canais e mensagens do servidor').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName('squad').setDescription('Cria convocatória').addStringOption(o => o.setName('jogo').setDescription('Jogo').setRequired(true)).addIntegerOption(o => o.setName('vagas').setDescription('Vagas').setRequired(true)).addStringOption(o => o.setName('detalhes').setDescription('Detalhes').setRequired(true)),
-    new SlashCommandBuilder().setName('rank').setDescription('Mostra patente e XP').addUserOption(o => o.setName('membro').setDescription('Membro')),
-    new SlashCommandBuilder().setName('top').setDescription('Top 10 da tropa'),
-    new SlashCommandBuilder().setName('agenda').setDescription('Edita agenda').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-    new SlashCommandBuilder().setName('livetest').setDescription('Teste de live').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-    new SlashCommandBuilder().setName('storytest').setDescription('Teste story IG').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName('loja').setDescription('Loja de XP'),
-    new SlashCommandBuilder().setName('sorteio').setDescription('Sorteios').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-  ].map(c => c.toJSON());
-
-  discordClient.once(Events.ClientReady, async (c) => {
-    console.log(`[discord] Logado com sucesso como ${c.user.tag}`);
-    try {
-      const guild = await c.guilds.fetch(GUILD_ID);
-      await guild.commands.set(commands);
-      await backup.restoreIfFresh(c);
-      notifier.start(c);
-      sorteio.start(c);
-      backup.start(c);
-      await voiceRooms.cleanupEmptyTemporaryChannels(guild);
-    } catch (err) {
-      console.error('[discord] Erro ao sincronizar guilda/comandos:', err.message);
-    }
-  });
-
-  discordClient.on(Events.VoiceStateUpdate, (oldState, newState) => {
-    voiceRooms.handleVoiceState(oldState, newState).catch((e) => console.warn('[voice-rooms]', e.message));
-  });
-
-  discordClient.on(Events.MessageCreate, async (msg) => {
-    if (msg.guildId !== GUILD_ID || msg.author.bot) return;
-
-    if (msg.channel.id === HONEYPOT_CHANNEL_ID) {
-      try {
-        await msg.delete().catch(() => {});
-        const member = msg.member || (await msg.guild.members.fetch(msg.author.id).catch(() => null));
-        if (member) {
-          await member.timeout(7 * 24 * 60 * 60 * 1000, 'Honeypot acionado.');
-        }
-      } catch (err) {
-        console.error('[honeypot]', err);
-      }
-      return;
-    }
-
-    xp.onMessage(msg, notifier.isLive()).catch((e) => console.warn('[xp]', e.message));
-
-    if (msg.channel.id === LIVE_CHAT_CHANNEL_ID) {
-      const isMod = msg.member && (msg.member.permissions.has(PermissionFlagsBits.ManageMessages) || msg.member.permissions.has(PermissionFlagsBits.Administrator));
-      if (isMod && global.twitchBotInstance && global.twitchBotInstance.connected) {
-        const modName = msg.member.displayName || msg.author.username;
-        const sent = global.twitchBotInstance.sendChat(`MOD (${modName}): ${msg.content}`);
-        if (sent) await msg.react('📡').catch(() => {});
-      }
-    }
-  });
-
-  discordClient.on(Events.GuildMemberAdd, async (member) => {
-    if (member.guild.id !== GUILD_ID || member.user.bot) return;
-    await xp.syncPatente(member, 0);
-  });
-
-  discordClient.on(Events.InteractionCreate, async (i) => {
-    try {
-      if (i.guildId !== GUILD_ID) return;
-      if (i.isChatInputCommand()) {
-        switch (i.commandName) {
-          case 'setup':
-            await i.deferReply({ flags: EPHEMERAL });
-            const r = await runSetup(i.guild, (t) => i.editReply(t));
-            return i.editReply(`✅ Pronto! ${r.roles} cargos e ${r.channels} canais configurados.`);
-          case 'squad': return squad.execute(discordClient, i);
-          case 'rank':
-            const user = i.options.getUser('membro') ?? i.user;
-            const member = await i.guild.members.fetch(user.id).catch(() => null);
-            return i.reply({ embeds: [xp.rankEmbed(user, member)], allowedMentions: NO_PING });
-          case 'top': return i.reply({ embeds: [xp.topEmbed()], allowedMentions: NO_PING });
-          case 'loja': return loja.execute(discordClient, i);
-          case 'sorteio': return sorteio.onCommand(discordClient, i);
-        }
-      }
-    } catch (err) {
-      console.error('[interaction]', err);
-    }
-  });
-
-  discordClient.login(DISCORD_TOKEN).catch(err => {
-    console.error('[discord] Erro ao efetuar login:', err.message);
-  });
-}

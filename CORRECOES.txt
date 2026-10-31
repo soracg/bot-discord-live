@@ -1,0 +1,27 @@
+CORRECOES  (zip bot-discord-live-main 5)
+
+O QUE FOI ENCONTRADO E CORRIGIDO
+1) FLOOD "[twitch-chat] conectado e pronto": o bot pedia a capacidade "membership" da Twitch, que envia um JOIN para CADA
+   viewer que entra no chat, e o codigo tratava qualquer JOIN como "conectei". Agora so conta o JOIN do proprio bot e
+   loga uma vez por conexao (teste: 8 linhas -> 1). A capacidade membership foi removida (ninguem a usava).
+2) chat-overlay/server.js NAO INICIAVA a partir da pasta chat-overlay (Cannot find module './squad'): ele importava o
+   bot do Discord da raiz com caminhos errados e ainda trazia uma copia INCOMPLETA do bot (sem /storytest, /livetest,
+   /agenda, modal da agenda, botoes de ticket). Agora ha UM unico bot: o index.js carrega o overlay no mesmo processo e
+   na mesma porta e reaproveita o bot da Twitch dele. O server.js tambem roda sozinho (sem Discord) se necessario.
+3) /storytest sem log no Render: o codigo ja logava "[IG] ...", mas so quem roda o index.js escreve esse log. Se o Discord
+   respondia e o Render nao mostrava nada, quem atendeu o comando foi OUTRO processo com o mesmo DISCORD_TOKEN
+   (provavel: bot ainda ligado na Discloud, ver discloud.config). Agora o story loga todas as etapas:
+   "[storytest] pedido por ...", "[IG] pedido de story ...", "[IG] enviando para N conta(s)", sucesso/erro por conta,
+   "[IG] resultado: X/Y", motivo exato quando falta configuracao e o tempo restante do cooldown.
+4) hub.config.json voltou ao repositorio COM o token do Streamlabs. Foi retirado; use STREAMLABS_SOCKET_TOKEN (e gere
+   um token novo, o antigo ja esteve exposto).
+5) index.js: o login do Discord agora registra o erro em vez de derrubar o processo sem explicacao.
+6) twitchChat.js (raiz) ganhou o TWITCH_DOCK_PORT=off e tratamento de erro da porta 8080 (como o da pasta overlay).
+
+PASSOS
+ a) Substitua os arquivos deste zip no repositorio e faca o deploy.
+ b) Render: Start Command = node index.js  (raiz do repositorio). Nao rode mais um segundo servico com o overlay.
+ c) DESLIGUE o bot em qualquer outro lugar (Discloud ou outro servico) que use o mesmo DISCORD_TOKEN. Dois processos
+    com o mesmo token respondem comandos em dobro, dobram XP, timers do chat e posts de live/story.
+ d) Confira as variaveis com o .env.exemplo.
+ e) Teste: /storytest e veja no log do Render as linhas [storytest] e [IG].
