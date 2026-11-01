@@ -1,4 +1,5 @@
 require('dotenv').config();
+try { require('dns').setDefaultResultOrder('ipv4first'); } catch { /* Node antigo */ }
 const {
   Client,
   Events,
@@ -15,7 +16,7 @@ const {
 } = require('discord.js');
 const cfg = require('./config');
 const squad = require('./squad');
-const { state, save } = require('./store');
+const { state, save, onShutdown } = require('./store');
 const { runSetup, upsertMessage, agendaPayload } = require('./setup');
 const notifier = require('./notifier');
 const instagram = require('./instagramStory');
@@ -122,21 +123,50 @@ const commands = [
     ),
 ].map((c) => c.toJSON());
 
-client.once(Events.ClientReady, async (c) => {
+client.once(Events.ClientReady, (c) => bootDiscord(c));
+client.once('ready', (c) => bootDiscord(c)); // discord.js < 14.22 emite "ready"; 14.22+ tambem emite "clientReady"
+
+let discordBooted = false;
+function bootDiscord(c) {
+  if (discordBooted) return;
+  discordBooted = true;
   console.log(`Logado como ${c.user.tag}`);
+  startDiscordModules(c).catch((e) => console.error('[discord] falha ao iniciar modulos:', e && e.stack ? e.stack : e));
+}
+
+async function startDiscordModules(c) {
   const guild = await c.guilds.fetch(GUILD_ID);
-  await guild.commands.set(commands);
+  try {
+    await guild.commands.set(commands);
+  } catch (e) {
+    console.error('[discord] nao registrou os comandos:', e.message);
+  }
 
-  await backup.restoreIfFresh(c);
+  try {
+    await backup.restoreIfFresh(c);
+  } catch (e) {
+    console.error('[backup] restore:', e.message);
+  }
 
-  notifier.start(c);
-  const twitchInstance = twitchChat.start();
-  global.twitchBotInstance = twitchInstance;
-  sorteio.start(c);
-  backup.start(c);
+  try { notifier.start(c); } catch (e) { console.error('[notifier] start:', e.message); }
+  try { sorteio.start(c); } catch (e) { console.error('[sorteio] start:', e.message); }
+  try { backup.start(c); } catch (e) { console.error('[backup] start:', e.message); }
 
   await voiceRooms.cleanupEmptyTemporaryChannels(guild);
+}
+
+client.on('error', (e) => console.error('[discord] erro:', e && e.message ? e.message : e));
+client.on('shardError', (e) => console.error('[discord] shard:', e && e.message ? e.message : e));
+client.on('shardDisconnect', (ev, id) => console.error('[discord] desconectou shard', id, 'code', ev && ev.code));
+client.on('shardReconnecting', (id) => console.log('[discord] reconectando shard', id));
+client.on('warn', (info) => console.warn('[discord] aviso:', info));
+client.on('debug', (info) => {
+  if (/Fetched Gateway|Session Limit|Preparing to connect|Connecting to wss|Identifying|Waiting for identify|Not enough sessions/i.test(String(info))) {
+    console.log('[discord]', String(info).split('\n')[0]);
+  }
 });
+
+onShutdown(() => client.destroy().catch(() => {}));
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
   voiceRooms.handleVoiceState(oldState, newState).catch((e) => console.warn('[voice-rooms]', e.message));
@@ -410,16 +440,33 @@ client.on(Events.InteractionCreate, async (i) => {
 });
 
 // Overlay + painel + WebSocket + hub de eventos no MESMO processo e porta (Render).
-// O overlay reaproveita a instancia da Twitch deste bot (global.twitchBotInstance): nada de Twitch/Discord em duplicidade.
-// Se o overlay nao carregar, cai no servidor simples de saude para o Render nao derrubar o servico.
+// O overlay reaproveita a instancia da Twitch deste bot (global.twitchBotInstance).
+let overlayOk = false;
 try {
   require('./chat-overlay/server.js');
+  overlayOk = true;
 } catch (e) {
-  console.error('[overlay] nao carregou:', e.message);
+  console.error('[overlay] nao carregou:', e && e.stack ? e.stack : e);
   http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot Discord Live ativo e operando!\n');
   }).listen(PORT, () => console.log(`[web] Servidor HTTP ouvindo na porta ${PORT}`));
 }
 
-client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] login falhou:', e.message));
+// Com o overlay no mesmo processo o painel usa /ws. Porta extra (8080) so atrapalha no Render
+// e, se TWITCH_DOCK_PORT vier invalido, o ws estoura com "port NaN" e o chat nao sobe.
+if (overlayOk || process.env.PORT) {
+  const dock = String(process.env.TWITCH_DOCK_PORT || '').trim();
+  if (!/^\d+$/.test(dock)) process.env.TWITCH_DOCK_PORT = 'off';
+}
+
+const twitchInstance = twitchChat.start();
+global.twitchBotInstance = twitchInstance;
+
+console.log('[discord] conectando...');
+client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+setTimeout(() => {
+  if (!discordBooted) {
+    console.error('[discord] 30s e ainda nao logou. Se nao houve "[discord] login falhou" acima, a conexao com o gateway travou.');
+  }
+}, 30000);
