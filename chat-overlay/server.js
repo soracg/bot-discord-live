@@ -7,8 +7,8 @@ const twitchChatBot = require('./twitchChat_3'); // Importa o bot autenticado da
 try { require('dotenv').config(); } catch (e) {}
 const STANDALONE = require.main === module;   // true: `node chat-overlay/server.js`; false: carregado pelo index.js (bot completo)
 
-process.on('uncaughtException', e => console.log('[erro]', e && e.message));
-process.on('unhandledRejection', e => console.log('[erro]', e && e.message ? e.message : e));
+process.on('uncaughtException', (e) => console.error('[erro]', e && e.stack ? e.stack : e));
+process.on('unhandledRejection', (e) => console.error('[erro]', e && e.stack ? e.stack : e));
 const VERSION = 8;
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 const PUB = path.join(__dirname, 'public');
@@ -494,7 +494,9 @@ function saveRanksNow() {
 }
 const scheduleSave = () => { if (!saveTimer) saveTimer = setTimeout(() => { saveTimer = null; saveRanksNow(); }, 5000); };
 process.on('exit', saveRanksNow);
-['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => { saveRanksNow(); process.exit(0); }));
+if (STANDALONE) {
+  ['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => { saveRanksNow(); process.exit(0); }));
+}
 
 function rankingView() {
   const top = Object.values(users).sort((a, b) => b.xp - a.xp).slice(0, 5)
@@ -850,6 +852,7 @@ function hubHttp(req, res) {
 }
 
 const PORT = process.env.PORT || cfg.port || 3000;
+server.on('error', (e) => console.error('[overlay] servidor HTTP:', e.message));
 server.listen(PORT, () => {
   console.log(`\n  Versao ${VERSION} - pasta: ${__dirname}`);
   console.log(`  Servidor rodando na porta ${PORT}`);
