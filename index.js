@@ -1,5 +1,6 @@
 require('dotenv').config();
 try { require('dns').setDefaultResultOrder('ipv4first'); } catch { /* Node antigo */ }
+console.log('[boot] node', process.version, 'pid', process.pid);
 const {
   Client,
   Events,
@@ -466,24 +467,77 @@ if (overlayOk || process.env.PORT) {
 const twitchInstance = twitchChat.start();
 global.twitchBotInstance = twitchInstance;
 
-console.log('[discord] conectando... (node ' + process.version + ')');
-client.login(DISCORD_TOKEN).then(() => {
-  console.log('[discord] login() resolveu (token aceito; aguardando ready/guilds)');
-}).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+async function discordPreflight() {
+  console.log('[discord] preflight REST /gateway/bot (node ' + process.version + ')...');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: {
+        Authorization: 'Bot ' + DISCORD_TOKEN,
+        'User-Agent': 'DiscordBot (https://github.com/soracg/bot-discord-live, 1.0)',
+      },
+      signal: ctrl.signal,
+    });
+    const body = await res.text();
+    console.log('[discord] preflight status', res.status, body.slice(0, 220));
+    if (res.status === 401 || res.status === 403) {
+      console.error('[discord] TOKEN rejeitado pelo Discord (' + res.status + '). Reset o token no Developer Portal e atualize DISCORD_TOKEN no Render.');
+      return false;
+    }
+    if (!res.ok) {
+      console.error('[discord] preflight HTTP falhou — Discord API respondeu com erro.');
+      return false;
+    }
+    try {
+      const j = JSON.parse(body);
+      if (j && j.session_start_limit) {
+        const s = j.session_start_limit;
+        console.log('[discord] sessions remaining', s.remaining + '/' + s.total, 'reset after', s.reset_after, 'ms');
+        if (typeof s.remaining === 'number' && s.remaining <= 0) {
+          console.error('[discord] limite de identify esgotado por 24h. Espere o reset_after.');
+          return false;
+        }
+      }
+    } catch (_) {}
+    return true;
+  } catch (e) {
+    console.error('[discord] preflight rede/timeout:', e && e.name === 'AbortError' ? 'timeout 12s' : (e && e.message ? e.message : e));
+    console.error('[discord] Render nao conseguiu falar com discord.com — rede/DNS/firewall.');
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function startDiscordLogin() {
+  console.log('[discord] conectando gateway...');
+  client.login(DISCORD_TOKEN).then(() => {
+    console.log('[discord] login() resolveu (handshake ok; aguardando ready/guilds)');
+  }).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+}
+
+discordPreflight().then((ok) => {
+  if (!ok) {
+    console.error('[discord] pulando client.login por falha no preflight; retry em 45s');
+    setTimeout(() => discordPreflight().then((ok2) => { if (ok2) startDiscordLogin(); }), 45000);
+    return;
+  }
+  startDiscordLogin();
+});
 
 setTimeout(() => {
   if (!discordBooted) {
-    console.error('[discord] 30s e ainda nao logou. Veja as linhas [discord] acima (gateway/identify/close).');
-    console.error('[discord] Confira no Developer Portal: Message Content Intent e Server Members Intent ligados.');
-    console.error('[discord] Confira se so existe 1 processo com este DISCORD_TOKEN (Render + Discloud = conflito).');
+    console.error('[discord] 30s e ainda nao logou. Veja preflight + linhas [discord] acima.');
+    console.error('[discord] Portal: Message Content Intent + Server Members Intent ligados?');
   }
 }, 30000);
 
 setTimeout(() => {
   if (!discordBooted) {
-    console.error('[discord] 60s sem ready — forcando destroy/relogin...');
+    console.error('[discord] 60s sem ready — destroy + preflight + relogin...');
     client.destroy().catch(() => {}).finally(() => {
-      client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] relogin falhou:', e && e.message ? e.message : e));
+      discordPreflight().then((ok) => { if (ok) startDiscordLogin(); });
     });
   }
 }, 60000);
