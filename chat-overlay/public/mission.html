@@ -61,7 +61,72 @@
   #card.venceu #ok { display: flex; animation: carimbo .5s cubic-bezier(.2,1.4,.3,1) both; }
   @keyframes carimbo { from { opacity: 0; transform: scale(1.25) rotate(-2deg); } to { opacity: 1; transform: none; } }
 
-  @media (prefers-reduced-motion: reduce) { .fill { animation: none; transition: none; } #card.venceu #ok { animation: none; } }
+  /* ===== ANIMACOES ===== */
+  /* entrada do card */
+  #card { animation: entra .9s cubic-bezier(.2,.9,.25,1) both; }
+  @keyframes entra { from { opacity: 0; translate: -50px 0; clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); } to { opacity: 1; translate: 0 0; } }
+
+  /* borda de cima "respira" */
+  #card::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -4px; height: 4px; pointer-events: none;
+    background: linear-gradient(90deg, transparent 0, rgba(255,255,255,.75) 50%, transparent 100%);
+    background-size: 30% 100%; background-repeat: no-repeat; animation: varre 3.2s ease-in-out infinite;
+  }
+  @keyframes varre { 0% { background-position: -40% 0; } 60%, 100% { background-position: 140% 0; } }
+
+  /* brilho que corre pela barra + ponta da barra pulsando */
+  .fill::before {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,.35) 50%, transparent 65%);
+    background-size: 220% 100%; animation: brilho 2.6s ease-in-out infinite;
+  }
+  @keyframes brilho { from { background-position: 160% 0; } to { background-position: -60% 0; } }
+  .fill::after {
+    content: ""; position: absolute; top: -3px; bottom: -3px; right: -2px; width: 8px;
+    background: var(--amber); box-shadow: 0 0 12px 3px rgba(232,163,58,.85);
+    animation: ponta 1s ease-in-out infinite; opacity: 0; transition: opacity .3s;
+  }
+  #card.tem .fill::after { opacity: 1; }
+  @keyframes ponta { 50% { box-shadow: 0 0 18px 6px rgba(232,163,58,1); transform: scaleY(1.15); } }
+
+  /* ganhou recruta: numero pula, barra acende, card da um tranco */
+  #cur.pulo { animation: pulo .6s cubic-bezier(.2,1.5,.3,1); display: inline-block; }
+  @keyframes pulo { 35% { transform: scale(1.45); color: var(--amber); } }
+  .gauge.acende { animation: acende .9s ease-out; }
+  @keyframes acende { 0% { box-shadow: 0 0 0 0 rgba(232,163,58,.9); border-color: var(--amber); } 100% { box-shadow: 0 0 0 14px rgba(232,163,58,0); } }
+  #card.tranco { animation: tranco .45s ease-out; }
+  @keyframes tranco { 20% { translate: 5px 0; } 45% { translate: -4px 0; } 70% { translate: 2px 0; } }
+
+  /* "+1 recruta" subindo */
+  .mais {
+    position: absolute; right: 130px; top: 14px; font-size: 22px; font-weight: 700; color: var(--amber);
+    text-shadow: 0 2px 6px rgba(0,0,0,.7); pointer-events: none; animation: sobe 1.5s ease-out forwards; z-index: 3;
+  }
+  @keyframes sobe { 0% { opacity: 0; translate: 0 18px; scale: .7; } 15% { opacity: 1; translate: 0 0; scale: 1.2; } 100% { opacity: 0; translate: 0 -34px; scale: 1; } }
+
+  /* mensagens que se alternam explicando a operacao */
+  .label { position: relative; height: 24px; overflow: hidden; display: flex; align-items: center; gap: 10px; opacity: 1; }
+  .label .ico { color: var(--amber); font-size: 15px; animation: ico 1.2s ease-in-out infinite; }
+  @keyframes ico { 50% { translate: 4px 0; opacity: .6; } }
+  .label .msg { display: inline-block; font-size: 18px; font-weight: 600; letter-spacing: .02em; color: var(--sand); animation: msgIn .55s cubic-bezier(.2,.9,.25,1) both; }
+  .label .msg.out { animation: msgOut .35s ease-in both; }
+  .label .msg b { color: var(--amber); font-weight: 700; }
+  @keyframes msgIn { from { opacity: 0; translate: 0 100%; } to { opacity: 1; translate: 0 0; } }
+  @keyframes msgOut { to { opacity: 0; translate: 0 -100%; } }
+  .dots { margin-left: auto; display: flex; gap: 5px; }
+  .dots i { width: 6px; height: 6px; background: rgba(230,220,192,.28); transition: background .3s, transform .3s; }
+  .dots i.on { background: var(--amber); transform: scale(1.3); }
+
+  /* perto da meta (80%+) */
+  #card.quase { border-top-color: var(--amber); }
+  #card.quase .fase { animation: piscaFase 1s steps(1) infinite; }
+  @keyframes piscaFase { 50% { opacity: .25; } }
+
+  /* confete da missao cumprida */
+  .conf { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; pointer-events: none; animation: conf 2.2s cubic-bezier(.1,.7,.3,1) forwards; }
+  @keyframes conf { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+  #card.venceu #ok .big { animation: batida .8s ease-out .3s both; }
+  @keyframes batida { 0% { scale: 1; } 30% { scale: 1.12; } 100% { scale: 1; } }
 </style>
 </head>
 <body>
@@ -71,7 +136,7 @@
     <div class="conta"><span id="cur">0</span><small> / <span id="goal">50</span></small></div>
   </div>
   <div class="gauge"><div class="fill" id="fill"></div><div class="ticks"></div></div>
-  <div class="label" id="label">Novos recrutas</div>
+  <div class="label"><span class="ico">&#9654;</span><span class="msg" id="msg"></span><span class="dots" id="dots"></span></div>
   <div id="ok"><div class="big">Missão cumprida</div><div class="sub" id="oksub"></div></div>
 </div>
 <script>
@@ -83,13 +148,80 @@
   const $ = id => document.getElementById(id);
   let comemorando = false, pendente = null;
 
+  // ---- mensagens que explicam a operacao (troque na URL: ?msgs=Texto 1|Texto 2|Texto 3) ----
+  let nomeOp = 'Novos recrutas', quase = false, idxMsg = 0, ultimaMsg = '';
+  function mensagens() {
+    if (Q.get('msgs')) return Q.get('msgs').split('|');
+    const l = [
+      'Opera\u00e7\u00e3o <b>' + nomeOp + '</b>',
+      'Cada follow \u00e9 <b>um recruta a mais</b> na tropa',
+      'Com o <b>seu follow</b> a gente entrega a meta',
+    ];
+    if (quase) l.splice(1, 0, '<b>Falta pouco!</b> Segue e fecha a meta com a gente');
+    return l;
+  }
+  function mostraMsg(forca) {
+    const l = mensagens(), el = $('msg');
+    $('dots').innerHTML = l.map((_, i) => '<i></i>').join('');
+    const texto = l[idxMsg % l.length];
+    [...$('dots').children].forEach((d, i) => d.classList.toggle('on', i === idxMsg % l.length));
+    if (texto === ultimaMsg && !forca) return;
+    ultimaMsg = texto;
+    el.classList.add('out');
+    setTimeout(() => { el.classList.remove('out'); el.innerHTML = texto; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }, 330);
+  }
+  setInterval(() => { if (!comemorando) { idxMsg++; mostraMsg(); } }, 4800);
+
+  // ---- contador que rola ate o novo valor ----
+  let exibido = null, rolando = null;
+  function rolaPara(novo) {
+    const ini = exibido === null ? novo : exibido;
+    clearInterval(rolando);
+    if (ini === novo) { $('cur').textContent = novo; exibido = novo; return; }
+    const t0 = performance.now(), dur = 700;
+    rolando = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      exibido = Math.round(ini + (novo - ini) * e);
+      $('cur').textContent = exibido;
+      if (k >= 1) clearInterval(rolando);
+    }, 30);
+  }
+
+  function efeitoGanhou(n) {
+    const c = $('cur'); c.classList.remove('pulo'); void c.offsetWidth; c.classList.add('pulo');
+    const g = document.querySelector('.gauge'); g.classList.remove('acende'); void g.offsetWidth; g.classList.add('acende');
+    card.classList.remove('tranco'); void card.offsetWidth; card.classList.add('tranco');
+    const p = document.createElement('div'); p.className = 'mais'; p.textContent = '+' + n + (n > 1 ? ' recrutas' : ' recruta');
+    card.appendChild(p); setTimeout(() => p.remove(), 1600);
+  }
+
+  let ultimoValor = null;
   function render(m) {
-    $('title').textContent = m.title || 'Missão';
+    $('title').textContent = m.title || 'Miss\u00e3o';
     $('fase').textContent = 'Fase ' + m.level;
-    $('label').textContent = m.label || '';
-    $('cur').textContent = m.current;
+    nomeOp = m.label || 'Novos recrutas';
     $('goal').textContent = m.goal;
-    $('fill').style.width = Math.min(100, (m.current / m.goal) * 100) + '%';
+    const pct = Math.min(100, (m.current / m.goal) * 100);
+    $('fill').style.width = pct + '%';
+    card.classList.toggle('tem', m.current > 0);
+    const q = pct >= 80 && pct < 100;
+    if (q !== quase) { quase = q; card.classList.toggle('quase', q); idxMsg = q ? 1 : 0; mostraMsg(true); }
+    if (ultimoValor !== null && m.current > ultimoValor) efeitoGanhou(m.current - ultimoValor);
+    ultimoValor = m.current;
+    rolaPara(m.current);
+    mostraMsg();
+  }
+
+  function confete() {
+    const cores = ['#14181a', '#fff4d6', '#6f8a4e', '#e6dcc0'];
+    for (let i = 0; i < 46; i++) {
+      const c = document.createElement('i'); c.className = 'conf';
+      const ang = Math.random() * Math.PI * 2, d = 120 + Math.random() * 230;
+      c.style.setProperty('--dx', Math.cos(ang) * d + 'px'); c.style.setProperty('--dy', Math.sin(ang) * d * .7 + 'px');
+      c.style.setProperty('--rot', (Math.random() * 900 - 450) + 'deg');
+      c.style.background = cores[i % cores.length]; c.style.animationDelay = (Math.random() * .25) + 's';
+      $('ok').appendChild(c); setTimeout(() => c.remove(), 2200);
+    }
   }
 
   function cumprida(m, nivel) {
@@ -97,7 +229,7 @@
     // enche a barra da fase que acabou, depois carimba, depois mostra a nova fase
     $('fill').style.width = '100%';
     $('oksub').textContent = 'Fase ' + nivel + ' concluída';
-    setTimeout(() => card.classList.add('venceu'), 900);
+    setTimeout(() => { card.classList.add('venceu'); confete(); }, 900);
     setTimeout(() => {
       card.classList.remove('venceu');
       comemorando = false;
@@ -107,7 +239,7 @@
   }
 
   function conecta() {
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    const ws = new WebSocket('ws://' + location.host + '/ws');
     ws.onmessage = e => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === 'init' && m.mission) render(m.mission);
@@ -119,7 +251,16 @@
     };
     ws.onclose = () => setTimeout(conecta, 2000);
   }
-  conecta();
+  // teste sem servidor: mission.html?demo=1  (teclas: espaco +1, N +5, M cumprir fase)
+  if (Q.get('demo')) {
+    const D = { title: 'Miss\u00e3o', level: 1, label: 'Novos recrutas', current: 12, goal: 50 };
+    render(D);
+    document.addEventListener('keydown', e => {
+      const k = e.key.toLowerCase();
+      if (k === ' ' || k === 'n') { D.current = Math.min(D.goal, D.current + (k === 'n' ? 5 : 1)); render(D); }
+      if (k === 'm') { D.current = D.goal; cumprida(D, D.level); setTimeout(() => { D.level++; D.goal += 50; D.current = 0; ultimoValor = null; }, 0); }
+    });
+  } else conecta();
 </script>
 </body>
 </html>

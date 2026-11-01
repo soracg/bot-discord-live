@@ -16,7 +16,12 @@
   html, body { margin: 0; background: transparent; overflow: hidden; }
   body { font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; color: var(--sand); }
 
-  #wrap { width: 360px; transform-origin: top left; }
+  #wrap {
+    width: 360px; transform-origin: top left;
+    opacity: 0; translate: -50px 0; pointer-events: none;
+    transition: opacity .6s ease, translate .6s cubic-bezier(.2,.9,.25,1);
+  }
+  #wrap.visivel { opacity: 1; translate: 0 0; }
   .panel {
     background: linear-gradient(180deg, rgba(20,24,26,.94), rgba(20,24,26,.82));
     border-top: 4px solid var(--olive);
@@ -60,7 +65,21 @@
 
   @keyframes entra { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: none; } }
   @keyframes sai { to { opacity: 0; transform: translateY(8px); } }
-  @media (prefers-reduced-motion: reduce) { #card.on, #card.sai { animation-duration: .01s; } .barra i { transition: none; } }
+  /* atualizacao do ranking: linha que ganhou XP acende e mostra +XP */
+  li { position: relative; }
+  li.subiu { animation: acende 1.8s ease-out; }
+  @keyframes acende { 0% { background: rgba(232,163,58,.55); translate: 10px 0; } 25% { translate: 0 0; } 100% { background: transparent; } }
+  li .x .d { display: inline-block; margin-right: 8px; color: var(--amber); font-weight: 700; animation: delta 2.4s ease-out forwards; }
+  @keyframes delta { 0% { opacity: 0; translate: 0 8px; } 15% { opacity: 1; translate: 0 0; } 70% { opacity: 1; } 100% { opacity: 0; translate: 0 -6px; } }
+  li.novo { animation: novo .9s cubic-bezier(.2,1.2,.3,1); }
+  @keyframes novo { from { opacity: 0; translate: -30px 0; } to { opacity: 1; translate: 0 0; } }
+  .mvp.flash { animation: mvpflash 1.4s ease-out; }
+  @keyframes mvpflash { 0% { background: rgba(232,163,58,.65); } 100% { background: linear-gradient(90deg, rgba(232,163,58,.22), transparent); } }
+  /* barra de tempo ate sumir */
+  .tempo { height: 3px; background: rgba(230,220,192,.12); }
+  .tempo i { display: block; height: 100%; width: 100%; background: var(--olive); transform-origin: left; }
+  .tempo i.corre { animation: encolhe var(--dur, 30s) linear forwards; }
+  @keyframes encolhe { to { transform: scaleX(0); } }
 </style>
 </head>
 <body>
@@ -72,6 +91,7 @@
     </div>
     <ol id="lista"></ol>
     <div class="vazio-lista" id="vazio">Fale no chat para entrar no ranking.</div>
+    <div class="tempo"><i id="tempo"></i></div>
   </div>
   <div id="card">
     <div class="l1"><span id="cIns"></span><span class="nome" id="cNome"></span><span class="pos" id="cPos"></span></div>
@@ -81,10 +101,11 @@
   </div>
 </div>
 <script>
-  // Opcoes na URL: ?scale=1.2   ?card=7 (segundos do cartao !rank)
+  // Opcoes na URL: ?scale=1.2   ?card=7 (segundos do cartao !rank)   ?tempo=30 (segundos visivel)   ?demo=1 (teste: espaco = alguem falou)
   const Q = new URLSearchParams(location.search);
   document.getElementById('wrap').style.transform = 'scale(' + (Number(Q.get('scale')) || 1) + ')';
   const CARD_MS = (Number(Q.get('card')) || 7) * 1000;
+  const TEMPO_MS = (Number(Q.get('tempo')) || 30) * 1000;
   const $ = id => document.getElementById(id);
   let RANKS = [];
 
@@ -112,10 +133,26 @@
   const t = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
   const fmt = n => Number(n).toLocaleString('pt-BR');
 
-  function render(r) {
+  // ---- aparece quando alguem fala; some depois de TEMPO_MS sem atividade ----
+  let sumirTimer = null;
+  function aparece(ms) {
+    const w = $('wrap'), b = $('tempo'), dur = Math.max(TEMPO_MS, ms || 0);
+    w.classList.add('visivel');
+    b.classList.remove('corre'); void b.offsetWidth; b.style.setProperty('--dur', dur + 'ms'); b.classList.add('corre');
+    clearTimeout(sumirTimer);
+    sumirTimer = setTimeout(() => w.classList.remove('visivel'), dur);
+  }
+
+  let anterior = null, mvpAnterior = null;   // nome -> xp, para destacar quem ganhou XP
+  function render(r, destaca) {
     RANKS = r.ranks || RANKS;
     const mvp = $('mvp');
-    if (r.mvp) { mvp.classList.remove('vazio'); $('mvpNome').textContent = r.mvp.name; $('mvpXp').textContent = '+' + fmt(r.mvp.xp) + ' XP'; }
+    if (r.mvp) {
+      mvp.classList.remove('vazio'); $('mvpNome').textContent = r.mvp.name; $('mvpXp').textContent = '+' + fmt(r.mvp.xp) + ' XP';
+      const k = r.mvp.name + '|' + r.mvp.xp;
+      if (destaca && mvpAnterior !== null && k !== mvpAnterior) { mvp.classList.remove('flash'); void mvp.offsetWidth; mvp.classList.add('flash'); }
+      mvpAnterior = k;
+    }
     else { mvp.classList.add('vazio'); $('mvpNome').textContent = 'Ninguém ainda'; $('mvpXp').textContent = ''; }
 
     const ol = $('lista'); ol.replaceChildren();
@@ -125,8 +162,17 @@
       const ins = t('span'); ins.appendChild(insignia(u.rank)); li.appendChild(ins);
       const n = t('span', 'n', u.name); n.appendChild(t('small', null, u.rank)); li.appendChild(n);
       li.appendChild(t('span', 'x', fmt(u.xp) + ' XP'));
+      if (destaca && anterior) {
+        const antes = anterior[u.name];
+        if (antes === undefined) li.classList.add('novo');
+        else if (u.xp > antes) {
+          li.classList.add('subiu');
+          const x = li.querySelector('.x'); x.prepend(t('b', 'd', '+' + fmt(u.xp - antes)));
+        }
+      }
       ol.appendChild(li);
     });
+    anterior = {}; r.top.forEach(u => { anterior[u.name] = u.xp; });
     $('vazio').style.display = r.top.length ? 'none' : 'block';
   }
 
@@ -141,21 +187,39 @@
     $('cNext').textContent = c.next ? 'Faltam ' + fmt(c.next.at - c.xp) + ' XP para ' + c.next.rank : 'Patente máxima';
     el.classList.remove('sai'); el.classList.add('on');
     $('cBar').style.width = '0%'; requestAnimationFrame(() => requestAnimationFrame(() => { $('cBar').style.width = pct + '%'; }));
+    aparece(CARD_MS + 1500);
     clearTimeout(cardTimer);
     cardTimer = setTimeout(() => { el.classList.add('sai'); setTimeout(() => el.classList.remove('on', 'sai'), 320); }, CARD_MS);
   }
 
   function conecta() {
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    const ws = new WebSocket('ws://' + location.host + '/ws');
     ws.onmessage = e => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
-      if (m.type === 'init' && m.ranking) render(m.ranking);
-      else if (m.type === 'ranking') render(m.ranking);
+      if (m.type === 'init' && m.ranking) render(m.ranking, false);          // carrega escondido
+      else if (m.type === 'ranking') { render(m.ranking, true); aparece(); }  // alguem falou: mostra e atualiza
       else if (m.type === 'rankcard') mostraCard(m.card);
     };
     ws.onclose = () => setTimeout(conecta, 2000);
   }
-  conecta();
+  // teste sem servidor: ranking.html?demo=1&tempo=8  (espaco = alguem falou, C = cartao !rank)
+  if (Q.get('demo')) {
+    RANKS = ['Recruta', 'Soldado', 'Cabo', 'Sargento', 'Tenente', 'Capitao', 'Major', 'Coronel'];
+    const top = [{ name: 'Kormath', rank: 'Sargento', xp: 420 }, { name: 'Luke', rank: 'Cabo', xp: 260 }, { name: 'Tavim', rank: 'Soldado', xp: 120 }];
+    const nomes = ['Luke', 'Tavim', 'Kormath', 'CasS', 'faccin'];
+    render({ ranks: RANKS, mvp: { name: 'Kormath', xp: 420 }, top }, false);
+    document.addEventListener('keydown', e => {
+      if (e.key === ' ') {
+        const n = nomes[Math.floor(Math.random() * nomes.length)];
+        let u = top.find(x => x.name === n);
+        if (!u) { u = { name: n, rank: 'Recruta', xp: 0 }; top.push(u); }
+        u.xp += 10 + Math.floor(Math.random() * 30);
+        top.sort((a, b) => b.xp - a.xp);
+        render({ ranks: RANKS, mvp: { name: top[0].name, xp: top[0].xp }, top: top.slice(0, 5) }, true); aparece();
+      }
+      if (e.key.toLowerCase() === 'c') mostraCard({ name: 'Luke', rank: 'Cabo', xp: 260, pos: 2, next: { at: 400, rank: 'Sargento' } });
+    });
+  } else conecta();
 </script>
 </body>
 </html>
