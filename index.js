@@ -467,10 +467,17 @@ if (overlayOk || process.env.PORT) {
 const twitchInstance = twitchChat.start();
 global.twitchBotInstance = twitchInstance;
 
-async function discordPreflight() {
-  console.log('[discord] preflight REST /gateway/bot (node ' + process.version + ')...');
+/**
+ * Preflight contra /gateway/bot.
+ * Render (e outros free tiers) usam IPs compartilhados; Discord/Cloudflare
+ * frequentemente devolve 429 ou página HTML de rate-limit. Tratamos isso
+ * com backoff longo e várias tentativas antes de desistir do preflight.
+ */
+async function discordPreflight(attempt = 1) {
+  const maxAttempts = 6;
+  console.log(`[discord] preflight REST /gateway/bot (tentativa ${attempt}/${maxAttempts}, node ${process.version})...`);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 12000);
+  const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
     const res = await fetch('https://discord.com/api/v10/gateway/bot', {
       headers: {
@@ -480,47 +487,106 @@ async function discordPreflight() {
       signal: ctrl.signal,
     });
     const body = await res.text();
-    console.log('[discord] preflight status', res.status, body.slice(0, 220));
+    const isHtml = /^\s*<(!doctype|html)/i.test(body);
+    console.log('[discord] preflight status', res.status, isHtml ? '(resposta HTML/Cloudflare)' : body.slice(0, 220));
+
     if (res.status === 401 || res.status === 403) {
       console.error('[discord] TOKEN rejeitado pelo Discord (' + res.status + '). Reset o token no Developer Portal e atualize DISCORD_TOKEN no Render.');
-      return false;
+      return { ok: false, fatal: true };
     }
+
+    // 429 ou HTML de Cloudflare = rate-limit no IP do Render
+    if (res.status === 429 || (isHtml && !res.ok)) {
+      let waitMs = 90000; // default 90s em free tier
+      const retryAfter = res.headers.get('retry-after');
+      if (retryAfter) {
+        const sec = parseFloat(retryAfter);
+        if (!Number.isNaN(sec) && sec > 0) waitMs = Math.min(Math.ceil(sec * 1000) + 2000, 300000);
+      }
+      // HTML Cloudflare costuma precisar de espera maior
+      if (isHtml) waitMs = Math.max(waitMs, 120000);
+      console.error(`[discord] rate-limit / Cloudflare (status ${res.status}). Aguardando ${Math.round(waitMs / 1000)}s antes da próxima tentativa.`);
+      if (attempt >= maxAttempts) {
+        console.error('[discord] preflight esgotou tentativas por rate-limit. Vamos tentar o login mesmo assim (discord.js tem retry próprio).');
+        return { ok: true, forceLogin: true }; // deixa o client.login tentar
+      }
+      await new Promise((r) => setTimeout(r, waitMs));
+      return discordPreflight(attempt + 1);
+    }
+
     if (!res.ok) {
-      console.error('[discord] preflight HTTP falhou — Discord API respondeu com erro.');
-      return false;
+      console.error('[discord] preflight HTTP falhou — Discord API respondeu com erro ' + res.status);
+      if (attempt < maxAttempts) {
+        const waitMs = Math.min(30000 * attempt, 120000);
+        console.error(`[discord] nova tentativa em ${Math.round(waitMs / 1000)}s...`);
+        await new Promise((r) => setTimeout(r, waitMs));
+        return discordPreflight(attempt + 1);
+      }
+      return { ok: false, fatal: false };
     }
+
     try {
       const j = JSON.parse(body);
       if (j && j.session_start_limit) {
         const s = j.session_start_limit;
         console.log('[discord] sessions remaining', s.remaining + '/' + s.total, 'reset after', s.reset_after, 'ms');
         if (typeof s.remaining === 'number' && s.remaining <= 0) {
-          console.error('[discord] limite de identify esgotado por 24h. Espere o reset_after.');
-          return false;
+          const wait = Math.min(Number(s.reset_after) || 60000, 300000);
+          console.error(`[discord] limite de identify esgotado. Esperando ${Math.round(wait / 1000)}s pelo reset.`);
+          if (attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, wait));
+            return discordPreflight(attempt + 1);
+          }
+          return { ok: false, fatal: true };
         }
       }
     } catch (_) {}
-    return true;
+    return { ok: true };
   } catch (e) {
-    console.error('[discord] preflight rede/timeout:', e && e.name === 'AbortError' ? 'timeout 12s' : (e && e.message ? e.message : e));
-    console.error('[discord] Render nao conseguiu falar com discord.com — rede/DNS/firewall.');
-    return false;
+    console.error('[discord] preflight rede/timeout:', e && e.name === 'AbortError' ? 'timeout 15s' : (e && e.message ? e.message : e));
+    console.error('[discord] Render nao conseguiu falar com discord.com — rede/DNS/firewall ou rate-limit de borda.');
+    if (attempt < maxAttempts) {
+      const waitMs = Math.min(45000 * attempt, 180000);
+      console.error(`[discord] nova tentativa de preflight em ${Math.round(waitMs / 1000)}s...`);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return discordPreflight(attempt + 1);
+    }
+    // Última tentativa: deixa o login rolar mesmo sem preflight ok
+    console.error('[discord] preflight falhou em todas as tentativas. Tentando client.login mesmo assim.');
+    return { ok: true, forceLogin: true };
   } finally {
     clearTimeout(timer);
   }
 }
 
 function startDiscordLogin() {
+  if (discordBooted) return;
   console.log('[discord] conectando gateway...');
   client.login(DISCORD_TOKEN).then(() => {
     console.log('[discord] login() resolveu (handshake ok; aguardando ready/guilds)');
-  }).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+  }).catch((e) => {
+    console.error('[discord] login falhou:', e && e.stack ? e.stack : e);
+    // Se o login falhar (ex.: 429 no identify), agenda nova tentativa
+    if (!discordBooted) {
+      const wait = 90000;
+      console.error(`[discord] reagendando login em ${wait / 1000}s...`);
+      setTimeout(() => {
+        if (!discordBooted) {
+          client.destroy().catch(() => {}).finally(() => startDiscordLogin());
+        }
+      }, wait);
+    }
+  });
 }
 
-discordPreflight().then((ok) => {
-  if (!ok) {
-    console.error('[discord] pulando client.login por falha no preflight; retry em 45s');
-    setTimeout(() => discordPreflight().then((ok2) => { if (ok2) startDiscordLogin(); }), 45000);
+discordPreflight().then((result) => {
+  if (!result || result.fatal) {
+    console.error('[discord] preflight fatal (token inválido ou identify esgotado). Não vou tentar login.');
+    return;
+  }
+  if (!result.ok && !result.forceLogin) {
+    console.error('[discord] preflight falhou; tentando login mesmo assim em 30s...');
+    setTimeout(startDiscordLogin, 30000);
     return;
   }
   startDiscordLogin();
@@ -528,16 +594,20 @@ discordPreflight().then((ok) => {
 
 setTimeout(() => {
   if (!discordBooted) {
-    console.error('[discord] 30s e ainda nao logou. Veja preflight + linhas [discord] acima.');
-    console.error('[discord] Portal: Message Content Intent + Server Members Intent ligados?');
+    console.error('[discord] 45s e ainda nao logou. Veja preflight + linhas [discord] acima.');
+    console.error('[discord] Checklist: 1) Message Content Intent + Server Members Intent ligados no Portal');
+    console.error('[discord] 2) Nenhum outro processo (Discloud, outro Render, local) usando o mesmo DISCORD_TOKEN');
+    console.error('[discord] 3) IP do Render free costuma tomar 429/Cloudflare — o bot já está com backoff longo');
   }
-}, 30000);
+}, 45000);
 
 setTimeout(() => {
   if (!discordBooted) {
-    console.error('[discord] 60s sem ready — destroy + preflight + relogin...');
+    console.error('[discord] 120s sem ready — destroy + preflight + relogin...');
     client.destroy().catch(() => {}).finally(() => {
-      discordPreflight().then((ok) => { if (ok) startDiscordLogin(); });
+      discordPreflight().then((result) => {
+        if (result && (result.ok || result.forceLogin) && !result.fatal) startDiscordLogin();
+      });
     });
   }
-}, 60000);
+}, 120000);
