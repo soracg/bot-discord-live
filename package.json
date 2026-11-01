@@ -8,7 +8,7 @@
     "twitch-auth": "node oauth-setup.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

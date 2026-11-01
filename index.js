@@ -43,6 +43,8 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
   ],
+  rest: { timeout: 20_000, retries: 3 },
+  failIfNotExists: false,
 });
 
 // Expõe a instância do client do Discord globalmente para o módulo twitchChat consumir
@@ -161,8 +163,9 @@ client.on('shardDisconnect', (ev, id) => console.error('[discord] desconectou sh
 client.on('shardReconnecting', (id) => console.log('[discord] reconectando shard', id));
 client.on('warn', (info) => console.warn('[discord] aviso:', info));
 client.on('debug', (info) => {
-  if (/Fetched Gateway|Session Limit|Preparing to connect|Connecting to wss|Identifying|Waiting for identify|Not enough sessions/i.test(String(info))) {
-    console.log('[discord]', String(info).split('\n')[0]);
+  const line = String(info).split('\n')[0];
+  if (/Fetched Gateway|Session Limit|Preparing to connect|Connecting to wss|Identifying|Waiting for|Heartbeat|Shard|guilds|ready|Invalid Session|Close|Resume|token|HTTP/i.test(line)) {
+    console.log('[discord]', line.slice(0, 240));
   }
 });
 
@@ -463,10 +466,24 @@ if (overlayOk || process.env.PORT) {
 const twitchInstance = twitchChat.start();
 global.twitchBotInstance = twitchInstance;
 
-console.log('[discord] conectando...');
-client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+console.log('[discord] conectando... (node ' + process.version + ')');
+client.login(DISCORD_TOKEN).then(() => {
+  console.log('[discord] login() resolveu (token aceito; aguardando ready/guilds)');
+}).catch((e) => console.error('[discord] login falhou:', e && e.stack ? e.stack : e));
+
 setTimeout(() => {
   if (!discordBooted) {
-    console.error('[discord] 30s e ainda nao logou. Se nao houve "[discord] login falhou" acima, a conexao com o gateway travou.');
+    console.error('[discord] 30s e ainda nao logou. Veja as linhas [discord] acima (gateway/identify/close).');
+    console.error('[discord] Confira no Developer Portal: Message Content Intent e Server Members Intent ligados.');
+    console.error('[discord] Confira se so existe 1 processo com este DISCORD_TOKEN (Render + Discloud = conflito).');
   }
 }, 30000);
+
+setTimeout(() => {
+  if (!discordBooted) {
+    console.error('[discord] 60s sem ready — forcando destroy/relogin...');
+    client.destroy().catch(() => {}).finally(() => {
+      client.login(DISCORD_TOKEN).catch((e) => console.error('[discord] relogin falhou:', e && e.message ? e.message : e));
+    });
+  }
+}, 60000);
